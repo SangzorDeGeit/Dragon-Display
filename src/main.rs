@@ -1,87 +1,144 @@
 //Packages for configuration file
 use std::fs::File;
-use std::io::{Read, ErrorKind};
-use druid::lens::Unit;
-use druid::piet::cairo::glib::FileError;
-use toml;
-use serde::Deserialize;
+use std::io::{Read, ErrorKind, Write};
+use serde::{Deserialize, Serialize};
 
 //Packages for GUI
-use druid::widget::prelude::*;
+use druid::widget::{prelude::*, ViewSwitcher, RadioGroup};
 use druid::widget::{Flex, Label, Button};
-use druid::{commands, AppLauncher, Data, UnitPoint, WidgetExt, WindowDesc, FileDialogOptions, AppDelegate, DelegateCtx, Target, Command, Handled};
+use druid::{commands, AppLauncher, Data, UnitPoint, WidgetExt, WindowDesc, FileDialogOptions, AppDelegate, DelegateCtx, Target, Command, Handled, Lens};
 
 
+//packages for cloud syncing
+use google_drive::Client;
+use toml::to_string;
+
+const SYNCHRONIZATION_OPTIONS: [(&str, SynchronizationOptions); 3]= [
+    ("None", SynchronizationOptions::None),
+    ("Google Drive", SynchronizationOptions::GoogleDrive),
+    ("OneDrive", SynchronizationOptions::OneDrive)
+];
 
 //add all the types of supported cloud services for this program
-#[derive(Debug, Deserialize)]
-enum rclone {
+#[derive(PartialEq, Clone, Data, Debug, Deserialize, Serialize)]
+enum SynchronizationOptions {
+    None,
     GoogleDrive,
     OneDrive,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Data, Debug, Lens)]
+struct ConfigurationGUI{
+    configuration: Configuration,
+    page_number: u8
+}
+
+#[derive(Clone, Data, Debug, Deserialize, Serialize, Lens)]
 struct Configuration {
-    rclone: Option<rclone>,
-    sync_directory: Option<String>,
-    image_directory: String,
-    default_screen: i32
+    synchronization_option: SynchronizationOptions,
+    image_directory: Option<String>,
 }
 
 #[derive(Clone, Data)]
 struct Campaign {
     name: String
 }
-
 struct Delegate;
 
-fn config_gui() -> impl Widget<u8> {
-    // let message = Label::new("Choose if you want to synchronize images via rclone. \n 
-    // Choose none if you do not want to use the synchronization feature.");
-    let select_dialog_options = FileDialogOptions::new()
-        .select_directories()
-        .name_label("Target")
-        .title("Select folder with display images")
-        .button_text("Select");
-    let mut message = Label::new("Choose the location of the images \nImages in this folder can be displayed by the program");
-    let select = Button::new("Select folder").on_click(move |ctx, data, _| 
-        {ctx.submit_command(commands::SHOW_OPEN_PANEL.with(select_dialog_options.clone()))});
-
-    Flex::column()
-        .with_child(message)
-        .with_spacer(20.0)
-        .with_child(select)
+fn config_gui() -> impl Widget<ConfigurationGUI> {
+    let configuration_page = ViewSwitcher::new(
+        |data: &ConfigurationGUI, _env: &Env| data.clone(), 
+        |selector, data, _env| match selector.page_number {
+            1 => 
+            match &data.configuration.image_directory {
+                Some(image_directory) => {Box::new(
+                    Flex::column()
+                        .with_child(Label::new(format!("Image directory: {}", image_directory)))
+                        .with_spacer(20.0)
+                        .with_child(Button::new("Select folder").on_click(move |ctx, _data: &mut ConfigurationGUI, _| 
+                            {ctx.submit_command(commands::SHOW_OPEN_PANEL.with(
+                            FileDialogOptions::new()
+                            .select_directories()
+                            .name_label("Target")
+                            .title("Select folder with display images")
+                            .button_text("Select")
+                        ))}))
+                        .with_spacer(20.0)
+                        .with_child(Button::new("Next").on_click(|_ctx, data: &mut ConfigurationGUI, _| data.page_number+=1))
+                )},
+                None => {
+                    Box::new(
+                        Flex::column()
+                            .with_child(Label::new("Select image folder"))
+                            .with_spacer(20.0)
+                            .with_child(Button::new("Select folder").on_click(move |ctx, _data: &mut ConfigurationGUI, _| 
+                                {ctx.submit_command(commands::SHOW_OPEN_PANEL.with(
+                                FileDialogOptions::new()
+                                .select_directories()
+                                .name_label("Target")
+                                .title("Select folder with display images")
+                                .button_text("Select")
+                            ))}))
+                    )
+                }
+            },
+            _ => Box::new(
+                    Flex::column()
+                        .with_child(Label::new("Choose synchronization service"))
+                        .with_spacer(20.0)
+                        .with_child(RadioGroup::column(SYNCHRONIZATION_OPTIONS.to_vec()).lens(Configuration::synchronization_option).lens(ConfigurationGUI::configuration))
+                        .with_spacer(20.0)
+                        .with_child(Button::new("Finish").on_click(move |ctx, data: &mut ConfigurationGUI, _| {                        
+                            let mut configuration_file = File::create("config.toml").expect("coult not create file");
+                            let toml_string = to_string(&data.configuration).expect("Could not convert configuration into string");
+                            configuration_file.write_all(toml_string.as_bytes()).expect("could not write to file");
+                            ctx.submit_command(commands::CLOSE_WINDOW)
+                        }))
+                    )
+        }
+    );
+    Flex::row()
+        .with_child(configuration_page)
         .align_vertical(UnitPoint::CENTER)
 }
 
 
-fn config() -> File {
-    let config_screen = WindowDesc::new(config_gui())
+fn config_make() {
+    let configuration_item = Configuration {
+        synchronization_option: SynchronizationOptions::None,
+        image_directory: None
+    };
+   
+    let configuration_gui = ConfigurationGUI {
+        configuration: configuration_item,
+        page_number: 1
+    };
+    let configuration_screen = WindowDesc::new(config_gui())
         .title("Configurations")
-        .window_size((200.0, 200.0));
-
-    AppLauncher::with_window(config_screen)
+        .window_size((400.0, 200.0));
+    AppLauncher::with_window(configuration_screen)
         .delegate(Delegate)
         .log_to_console()
-        .launch(1.to_owned())
+        .launch(configuration_gui)
         .expect("Failed to start application");
 
-    File::create("config.toml").expect("Could not create file")
 }
 
-fn read_config(){
-    let mut file = File::open("config.toml").unwrap_or_else(|error| {
+fn config_read() -> Configuration {
+    let mut configuration_file = File::open("config.toml").unwrap_or_else(|error| {
         if error.kind() == ErrorKind::NotFound {
-            config()
+            config_make();
+            todo!()
         } else {
             panic!("Could not open file: {:?}", error);
         }
     });
     let mut contents = String::new();
-    file.read_to_string(&mut contents)
+    configuration_file.read_to_string(&mut contents)
         .expect("Failed to read file");
 
-    println!("{}", contents);
+    let conf = Configuration { synchronization_option:SynchronizationOptions::None, image_directory: None };
+    return conf
 }
 
 fn start_program(data: Campaign) {
@@ -100,7 +157,7 @@ fn choose_campaign_widget() -> impl Widget<Campaign> {
 
 }
 fn main() {
-    read_config();
+    config_read();
     //Describe main window
     let campaign_selection = WindowDesc::new(choose_campaign_widget())
         .title("Dragon-Display")
@@ -116,17 +173,22 @@ fn main() {
         .expect("Failed to start application");
 }
 
-impl AppDelegate<u8> for Delegate {
+
+impl AppDelegate<ConfigurationGUI> for Delegate {
     fn command(
         &mut self,
-        ctx: &mut DelegateCtx,
-        target: Target,
+        _ctx: &mut DelegateCtx,
+        _target: Target,
         cmd: &Command,
-        data: &mut u8,
-        env: &Env
+        data: &mut ConfigurationGUI,
+        _env: &Env
     ) -> Handled {
         if let Some(file_info) = cmd.get(commands::OPEN_FILE) {
-            
+                if let Some(path) = file_info.path().to_str() {
+                    data.configuration.image_directory = Option::from(String::from(path.to_string()));
+                    return Handled::Yes;
+                }
         }
+        Handled::No
     }
 }
