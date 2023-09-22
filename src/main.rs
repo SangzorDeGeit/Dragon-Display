@@ -2,16 +2,18 @@
 use std::fs::File;
 use std::io::{Read, ErrorKind, Write};
 use serde::{Deserialize, Serialize};
+use toml::to_string;
 
 //Packages for GUI
 use druid::widget::{prelude::*, ViewSwitcher, RadioGroup};
 use druid::widget::{Flex, Label, Button};
 use druid::{commands, AppLauncher, Data, UnitPoint, WidgetExt, WindowDesc, FileDialogOptions, AppDelegate, DelegateCtx, Target, Command, Handled, Lens};
 
-
 //packages for cloud syncing
 use google_drive::Client;
-use toml::to_string;
+
+//imported modules
+pub mod campaigns;
 
 const SYNCHRONIZATION_OPTIONS: [(&str, SynchronizationOptions); 3]= [
     ("None", SynchronizationOptions::None),
