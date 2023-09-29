@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{Read, ErrorKind, Write};
 use serde::{Deserialize, Serialize};
 use toml::to_string;
+use tokio;
 
 //Packages for GUI
 use druid::widget::{prelude::*, ViewSwitcher, RadioGroup};
@@ -10,10 +11,10 @@ use druid::widget::{Flex, Label, Button};
 use druid::{commands, AppLauncher, Data, UnitPoint, WidgetExt, WindowDesc, FileDialogOptions, AppDelegate, DelegateCtx, Target, Command, Handled, Lens};
 
 //packages for cloud syncing
-use google_drive::Client;
 
 //imported modules
 pub mod campaigns;
+pub mod google_drive_sync;
 
 const SYNCHRONIZATION_OPTIONS: [(&str, SynchronizationOptions); 3]= [
     ("None", SynchronizationOptions::None),
@@ -135,12 +136,7 @@ fn config_read() -> Configuration {
             panic!("Could not open file: {:?}", error);
         }
     });
-    let mut contents = String::new();
-    configuration_file.read_to_string(&mut contents)
-        .expect("Failed to read file");
-
-    let conf = Configuration { synchronization_option:SynchronizationOptions::None, image_directory: None };
-    return conf
+    todo!();
 }
 
 fn start_program(data: Campaign) {
@@ -158,21 +154,27 @@ fn choose_campaign_widget() -> impl Widget<Campaign> {
         .align_vertical(UnitPoint::CENTER)
 
 }
-fn main() {
-    config_read();
-    //Describe main window
-    let campaign_selection = WindowDesc::new(choose_campaign_widget())
-        .title("Dragon-Display")
-        .window_size((100.0, 100.0));
 
-    let option: Campaign = Campaign { 
-        name: "Uclia".into(),
-     };
-    //Start the application
-    AppLauncher::with_window(campaign_selection)
-        .log_to_console()
-        .launch(option)
-        .expect("Failed to start application");
+#[tokio::main]
+async fn main() {
+    println!("Start");
+    google_drive_sync::initialize().await;
+    //google_drive_sync::something();
+    println!("Done")
+    // config_read();
+    // //Describe main window
+    // let campaign_selection = WindowDesc::new(choose_campaign_widget())
+    //     .title("Dragon-Display")
+    //     .window_size((100.0, 100.0));
+
+    // let option: Campaign = Campaign { 
+    //     name: "Uclia".into(),
+    //  };
+    // //Start the application
+    // AppLauncher::with_window(campaign_selection)
+    //     .log_to_console()
+    //     .launch(option)
+    //     .expect("Failed to start application");
 }
 
 
