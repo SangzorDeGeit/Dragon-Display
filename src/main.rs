@@ -1,3 +1,5 @@
+#![feature(proc_macro_hygiene, decl_macro)]
+
 //Packages for configuration file
 use std::fs::File;
 use std::io::{Read, ErrorKind, Write};

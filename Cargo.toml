@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 druid = { git = "https://github.com/linebender/druid.git" }
-toml = "0.5"
+toml = "0.8.2"
 serde = { version = "1.0", features = ["derive"] }
 google-drive = "0.7"
 tokio = { version = "1", features = ["full"]}
 serde_json = "1.0"
+rocket = "0.4"
+open = "5.0"
