@@ -160,7 +160,8 @@ fn choose_campaign_widget() -> impl Widget<Campaign> {
 #[tokio::main]
 async fn main() {
     println!("Start");
-    google_drive_sync::initialize().await;
+    let access_token = google_drive_sync::initialize().await;
+    println!("{}",access_token.refresh_token);
     //google_drive_sync::something();
     println!("Done")
     // config_read();

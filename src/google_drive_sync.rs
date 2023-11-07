@@ -1,57 +1,72 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
-use std::fmt::format;
-
-use google_drive::Client;
+use std::env;
+use rouille::{Server, Response};
+use google_drive::{Client, AccessToken, files, drives};
 use open;
-#[macro_use] use rocket::*;
-use rocket::http::uri::Origin;
+
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
-#[get("/")]
-fn echo_fn(uri: &Origin) -> String {
-    match uri.to_string().strip_prefix("/?state=") {
-        Some(value) => {
-            match value.to_string().strip_suffix(&format!("&scope={}",&SCOPE)) {
-                Some(state_and_code) => {
-                    if let Some(state_code) = state_and_code.rsplit_once("&code=") {
-                        let state = state_code.0;
-                        let code = state_code.1;
-                        return format!("Successfully linked, can close this page now!\nstate = {}\ncode = {}",state.to_string(),code.to_string())
-                    }
-                },
-                None => panic!("Got wrong return from google api: redirect did not end with scope")
-            }
-        },
-        None => panic!("Got wrong return from google api: redirect did not start with /?state="),
-    }
-    return format!("succesfully linked!")
-}
 
-
-pub async fn initialize() {
-    println!("Starting...");
+pub async fn initialize() -> AccessToken {
     let mut google_drive_client = Client::new(
-        "1043613452788-2rq3ksqhaivjtt5hjjp5o49a0n87nbh2.apps.googleusercontent.com",
-        "",
+        "1043613452788-ij2c5k1k19jf4rqf8o0fg2hh0t71kvct.apps.googleusercontent.com",
+        "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",
         "http://localhost:8000/",
         "",
         ""
     );
-        
-    println!("made client");
+
     let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
     println!("The consent url: {}", user_consent_url);
+
+    let (_handler, sender) = start_server();
     open::that(user_consent_url).expect("could not open page");
-    start_listening().await;
 
-    // let mut access_token = google_drive_client.get_access_token(code, state).await.unwrap();
+    while let Err(_) = env::var("DRAGON_DISPLAY_CODE") {
+    }
+    sender.send(()).unwrap();
     
+    let code_state = (env::var("DRAGON_DISPLAY_CODE"), env::var("DRAGON_DISPLAY_STATE"));
 
+    match code_state {
+        (Ok(code), Ok(state)) => {
+            let access_token = google_drive_client.get_access_token(&code, &state).await.unwrap();
+            return access_token
+        },
+        _ => todo!(),
+    }
 }
 
-pub async fn start_listening() {
-    rocket::ignite().mount("/", routes![echo_fn]).launch();
+fn start_server() -> (std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>) {
+    let server = Server::new("localhost:8000", move |request|{
+        match request.raw_url().to_string().strip_prefix("/?state=") {
+            Some(value) => {
+                set_state_and_code(value);
+                Response::text("linked succesfully, you can close this page now!")
+            },
+            None => Response::text("sssshhhhh! I'm trying to listen!"),
+        }       
+    });
+
+    match server {
+        Ok(s) => {
+            return s.stoppable();
+        },
+        Err(_) => todo!()
+    }
+}
+
+fn set_state_and_code(value: &str) {
+    match value.to_string().strip_suffix(&format!("&scope={}",&SCOPE)) {
+        Some(state_and_code) => {
+            if let Some(state_code) = state_and_code.rsplit_once("&code=") {
+                env::set_var("DRAGON_DISPLAY_STATE", state_code.0);
+                env::set_var("DRAGON_DISPLAY_CODE", state_code.1);
+            } else {
+                todo!()
+            }
+        },
+        None => todo!()
+    }
 }
 
