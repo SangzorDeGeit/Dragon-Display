@@ -1,10 +1,10 @@
 use gtk::{prelude::*, ApplicationWindow};
-use gtk::{Application, Button, Stack, Label, Box, glib};
+use gtk::{Application, Button, Stack, Label, Box, glib, Grid, Entry};
+
+const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
 // The 'add campaign' window
 fn add_campaign_window(app: &Application) {
-    let container = Box::new(gtk::Orientation::Vertical, 100);
-
     let stack = Stack::new();
     stack.set_transition_type(gtk::StackTransitionType::SlideLeftRight);
     stack.set_transition_duration(200);
@@ -18,9 +18,22 @@ fn add_campaign_window(app: &Application) {
         .margin_start(12)
         .margin_end(12)
         .build();
-    let page_1 = Box::new(gtk::Orientation::Vertical, 50);
-    page_1.append(&page_1_label);
-    page_1.append(&button_next);
+    let button_cancel = Button::builder()
+        .label("Cancel")
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let entry = Entry::new();
+    entry.buffer().set_max_length(Some(CAMPAIGN_MAX_CHAR_LENGTH));
+    // Get text from this widget: entry.text().as_str()
+
+    let page_1 = Grid::new();
+    page_1.attach(&page_1_label, 2, 1, 1, 1);
+    page_1.attach(&entry, 2, 2, 1, 1);
+    page_1.attach(&button_next, 3, 3, 1, 1);
+    page_1.attach(&button_cancel, 1, 3, 1, 1);
 
     //setup page 2
     let page_2_label = Label::new(Some("Choose synchronization"));
@@ -39,12 +52,20 @@ fn add_campaign_window(app: &Application) {
     stack.add_titled(&page_1, Option::<&str>::None, "Naming");
     stack.add_titled(&page_2, Option::<&str>::None, "Synchronization");
 
-    container.append(&stack);
 
     //specify actions
     button_next.connect_clicked(glib::clone!(@strong stack => move |_| stack.set_visible_child(&page_2)));
-    button_prev.connect_clicked(move |_| stack.set_visible_child(&page_1));
+    // button_cancel.connect_clicked();
+    button_prev.connect_clicked(glib::clone!(@strong stack => move |_| stack.set_visible_child(&page_1)));
 
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&stack)
+        .build();
+
+
+    window.present();
 
 }
 
@@ -82,7 +103,7 @@ pub fn select_campaign_window(app: &Application){
     container.append(&remove_button);
 
     // Connect the widgets to actions
-    add_button.connect_clicked(move |_| add_campaign_window(app));
+    add_button.connect_clicked(glib::clone!(@strong app => move |_| add_campaign_window(&app)));
     // Make a stack containing the buttons
 
     //connect each button to sync the correct pictures and run the program
