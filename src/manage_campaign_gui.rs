@@ -1,10 +1,74 @@
+// packages for configuration files
+use serde::Serialize;
+
+// packages for gui
 use gtk::{prelude::*, ApplicationWindow};
-use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown};
+use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 
 use std::env;
+
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
+
+#[derive(Serialize)]
+struct Campaign {
+    name: String,
+    path: String,
+    sync_option: String
+}
+
+// The "main"/"select campaign" window
+pub fn select_campaign_window(app: &Application){
+    //read config -> list of campaigns
+
+    // Make the widget elements
+    let add_button = Button::builder()
+        .label("add campaign")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
+    let remove_button = Button::builder()
+        .label("remove campaign")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
+    //make amount a button for each campaign
+
+    //Make a box to put all the buttons in
+    let container = Box::new(gtk::Orientation::Horizontal, 100);
+    container.append(&add_button);
+    container.append(&remove_button);
+
+    //build the window
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&container)
+        .build();
+
+
+    // Connect the widgets to actions
+    add_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        window.destroy();
+        add_campaign_page_1(&app);
+    }));
+
+    //connect each button to sync the correct pictures and run the program
+
+    window.present();
+}
+
+
+
+
+
 
 // The 'add campaign' window
 fn add_campaign_page_1(app: &Application) {
@@ -47,7 +111,7 @@ fn add_campaign_page_1(app: &Application) {
     button_next.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
         let input = String::from(entry.text().as_str());
         if input.chars().all(char::is_whitespace) {
-            label.set_text("Name cannot be empty!")
+            create_error_dialog(&app, "name may not be empty");
         } else {
             env::set_var("CAMPAIGN_NAME", input.as_str());
             add_campaign_page_2(&app);
@@ -62,6 +126,12 @@ fn add_campaign_page_1(app: &Application) {
 
     window.present();
 }
+
+
+
+
+
+
 
 fn add_campaign_page_2(app: &Application) {
     // setup page 2
@@ -130,25 +200,38 @@ fn add_campaign_page_2(app: &Application) {
     window.present();
 }
 
+
+
+
+
+
+
 fn add_campaign_page_none(app: &Application) {
     // setup page (3) none
-    let path_text : String;
     match env::current_dir().unwrap().to_str() {
-        Some(path) => path_text = format!("Select the location of the image folder.\nCurrent Directory: {}", path),
-        None => path_text = String::from(""),
+        Some(path) => env::set_var("CAMPAIGN_PATH", path),
+        None => env::set_var("CAMPAIGN_PATH", ""),
     }
 
     let label = Label::builder()
-       .label(path_text)
-       .wrap_mode(gtk::pango::WrapMode::Word)
-       .max_width_chars(30)
        .margin_top(6)
        .margin_bottom(6)
        .margin_start(6)
        .margin_end(6)
        .build();
+    match env::var("CAMPAIGN_PATH") {
+        Ok(path) => label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", &path).as_str()),
+        Err(_) => label.set_text("Choose location of image folder"),
+    }
     let button_default = Button::builder()
        .label("Use Default")
+       .margin_top(6)
+       .margin_bottom(6)
+       .margin_start(6)
+       .margin_end(6)
+       .build();    
+    let button_choose = Button::builder()
+       .label("Choose Location")
        .margin_top(6)
        .margin_bottom(6)
        .margin_start(6)
@@ -162,7 +245,7 @@ fn add_campaign_page_none(app: &Application) {
        .margin_end(6)
        .build();
     let button_finish = Button::builder()
-       .label("Next")
+       .label("Finish")
        .margin_top(6)
        .margin_bottom(6)
        .margin_start(6)
@@ -180,6 +263,7 @@ fn add_campaign_page_none(app: &Application) {
     page_none.attach(&button_previous, 2, 3, 1, 1);
     page_none.attach(&button_cancel, 1, 3, 1, 1);
     page_none.attach(&button_default, 3, 2, 1, 1);
+    page_none.attach(&button_choose, 2, 2, 1, 1);
     page_none.attach(&button_finish, 3, 3, 1, 1);
 
     let window = ApplicationWindow::builder()
@@ -188,9 +272,33 @@ fn add_campaign_page_none(app: &Application) {
         .child(&page_none)
         .build();
 
-    
+
+    let file_chooser = FileChooserNative::new(
+        Some("Choose location of image folder"),
+        Some(&window),
+        gtk::FileChooserAction::SelectFolder,
+        Some("Select"),
+        Some("Cancel")
+    );
+
+    file_chooser.connect_response(glib::clone!(@strong label => move |file_chooser, response| {
+        match response {
+            gtk::ResponseType::Accept => {
+                match file_chooser.file() {
+                    Some(f) => label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", f.path().unwrap().to_str().unwrap()).as_str()),
+                    None => {}
+                }
+            },
+            _ => {}
+        }
+    }));
+
+    button_choose.connect_clicked(glib::clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
     button_default.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        add_campaign(&app);
+        match env::current_dir().unwrap().to_str() {
+            Some(path) => add_campaign(&app, path, "None"),
+            None => create_error_dialog(&app, "could not find the default directory"),
+        }
         window.destroy();
     }));
     button_previous.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
@@ -201,10 +309,22 @@ fn add_campaign_page_none(app: &Application) {
         window.destroy();
         select_campaign_window(&app)
     }));
-    
+    button_finish.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        match env::var("CAMPAIGN_PATH") {
+            Ok(path) => add_campaign(&app, &path, "None"),
+            Err(_) => create_error_dialog(&app, "Select a location for the image folder")
+        };
+        window.destroy();
+    }));
 
     window.present();
 }
+
+
+
+
+
+
 
    // setup page (3) google drive
 fn add_campaign_page_gd(app: &Application) {
@@ -219,65 +339,73 @@ fn add_campaign_page_gd(app: &Application) {
     window.present();
 }
 
-fn add_campaign(app: &Application){
-    
 
 
-    select_campaign_window(app)
-}
+
+
 
 // The 'remove campaign' window
 fn remove_campaign_window(){
     todo!();
 }
 
-// The "main"/"select campaign" window
-pub fn select_campaign_window(app: &Application){
-    //read config -> list of campaigns
 
-    // Make the widget elements
-    let add_button = Button::builder()
-        .label("add campaign")
+
+
+
+
+pub fn create_error_dialog(app: &Application, msg: &str) {
+    let label = Label::builder()
+        .label(msg)
+        .margin_bottom(6)
+        .margin_top(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let button = Button::builder()
+        .label("Ok")
         .margin_top(6)
         .margin_bottom(6)
         .margin_start(6)
         .margin_end(6)
         .build();
 
-    let remove_button = Button::builder()
-        .label("remove campaign")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
+    let container = Box::new(gtk::Orientation::Vertical, 10);
+    container.append(&label);
+    container.append(&button);
 
-    //make amount a button for each campaign
-
-    //Make a box to put all the buttons in
-    let container = Box::new(gtk::Orientation::Horizontal, 100);
-    container.append(&add_button);
-    container.append(&remove_button);
-
-    //build the window
-    let window = ApplicationWindow::builder()
+    let window = Dialog::builder()
         .application(app)
-        .title("Dragon-Display")
         .child(&container)
         .build();
+    window.set_modal(true);
 
-
-    // Connect the widgets to actions
-    add_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        add_campaign_page_1(&app);
+    button.connect_clicked(glib::clone!(@strong window => move |_| {
+        window.destroy()
     }));
 
-    //connect each button to sync the correct pictures and run the program
+    window.show()
+}
 
 
 
 
 
-    window.present();
+
+
+// This function is called by the gui modules to create the campaign
+fn add_campaign(app: &Application, path: &str, sync_option: &str){
+    match env::var("CAMPAIGN_NAME") {
+        Ok(name) => {
+            let campaign = Campaign {
+                name: String::from(name),
+                path: String::from(path),
+                sync_option: String::from(sync_option)
+            };
+        },
+        Err(_) => create_error_dialog(app, "Could not find a campaign name")
+    }
+
+
+    select_campaign_window(app)
 }
