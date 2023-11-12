@@ -1,22 +1,14 @@
-// packages for configuration files
-use serde::Serialize;
-
 // packages for gui
 use gtk::{prelude::*, ApplicationWindow};
 use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 
 use std::env;
 
+use crate::manage_campaign_logic::{write_campaign_to_config, self};
+
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
-
-#[derive(Serialize)]
-struct Campaign {
-    name: String,
-    path: String,
-    sync_option: String
-}
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &Application){
@@ -285,7 +277,10 @@ fn add_campaign_page_none(app: &Application) {
         match response {
             gtk::ResponseType::Accept => {
                 match file_chooser.file() {
-                    Some(f) => label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", f.path().unwrap().to_str().unwrap()).as_str()),
+                    Some(f) => {
+                        label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", f.path().unwrap().to_str().unwrap()).as_str());
+                        env::set_var("CAMPAIGN_PATH", f.path().unwrap().to_str().unwrap())
+                    },
                     None => {}
                 }
             },
@@ -397,11 +392,12 @@ pub fn create_error_dialog(app: &Application, msg: &str) {
 fn add_campaign(app: &Application, path: &str, sync_option: &str){
     match env::var("CAMPAIGN_NAME") {
         Ok(name) => {
-            let campaign = Campaign {
+            let campaign = manage_campaign_logic::Campaign {
                 name: String::from(name),
                 path: String::from(path),
                 sync_option: String::from(sync_option)
             };
+            write_campaign_to_config(campaign);
         },
         Err(_) => create_error_dialog(app, "Could not find a campaign name")
     }
