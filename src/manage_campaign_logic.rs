@@ -1,27 +1,49 @@
-use std::{fs::{File, OpenOptions}, io::{Write, self, ErrorKind}, path::PathBuf};
+use std::{fs::{File, OpenOptions}, io::{Write, self, ErrorKind, Read}};
 use serde::{Deserialize, Serialize};
 use toml::to_string;
 use std::env;
 use std::io::Error;
+use std::collections::HashMap;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Config {
-    campaign: Campaign
+    campaigns : HashMap<String, CampaignData>
 }
 
-#[derive(Serialize)]
-pub struct Campaign {
-    pub name: String,
-    pub path: String,
-    pub sync_option: String
+#[derive(Serialize, Deserialize)]
+pub struct CampaignData {
+    pub path : String,
+    pub sync_option : String
 }
 
-pub fn read_campaign_from_config() -> Option<Vec<Campaign>> {
-    todo!();
+pub fn read_campaign_from_config() -> Option<HashMap<String, CampaignData>> {
+    let mut file = match get_campaign_config("read") {
+        Ok(file) => file,
+        Err(_) => {
+            return None
+        }
+    };
+
+    let mut contents = String::new();
+    match file.read_to_string(&mut contents) {
+        Ok(_) => {},
+        Err(_) => {
+            return None
+        }
+    };
+
+    let config: Config = match toml::from_str(&contents) {
+        Ok(d) => d,
+        Err(_) => {
+            return None
+        }
+    };
+    return Some(config.campaigns);
 }
 
-pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error>{
-    let config_item = Config{campaign};
+
+pub fn write_campaign_to_config(campaign: HashMap<String, CampaignData>) -> Result<(), io::Error>{
+    let config_item = Config{campaigns: campaign};
     let mut config_file = get_campaign_config("append")?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
@@ -29,7 +51,7 @@ pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error>{
 }
 
 
-pub fn remove_campaign_from_config(campaign: Campaign) -> bool {
+pub fn remove_campaign_from_config(campaign: HashMap<String, CampaignData>) -> Result<(), io::Error> {
     todo!();
 }
 

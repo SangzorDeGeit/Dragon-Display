@@ -3,8 +3,13 @@ use gtk::{prelude::*, ApplicationWindow};
 use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 
 use std::env;
+use std::collections::HashMap;
 
-use crate::manage_campaign_logic::{write_campaign_to_config, self};
+use crate::manage_campaign_logic::{write_campaign_to_config, read_campaign_from_config, CampaignData};
+use crate::run_program;
+
+const PATH : &str = "path";
+const SYNC_OPTION : &str = "sync_option";
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
@@ -13,8 +18,16 @@ const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &Application){
     //read config -> list of campaigns
+    let campaign_list = read_campaign_from_config();
 
     // Make the widget elements
+    let label = Label::builder()
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
     let add_button = Button::builder()
         .label("add campaign")
         .margin_top(6)
@@ -31,12 +44,44 @@ pub fn select_campaign_window(app: &Application){
         .margin_end(6)
         .build();
 
+    let container = Grid::new();
+    match campaign_list {
+        Some(list) => {
+            label.set_text("Select a campaign");
+            let mut i = 0;
+            container.attach(&remove_button, i, 2, 1, 1);
+            for campaign in list {
+                i += 1;
+                let campaign_button = Button::builder()
+                    .label(&campaign.0)
+                    .margin_top(6)
+                    .margin_bottom(6)
+                    .margin_start(6)
+                    .margin_end(6)
+                    .build();
+                campaign_button.connect_clicked(move |_| run_program(&campaign));
+                container.attach(&campaign_button, i, 1, 1, 1)
+            }
+            if i%2 == 0 {
+                container.attach(&label, i/2, 0, 2, 1);
+            } else {
+                container.attach(&label, (i/2)+1, 0, 1, 1);
+            }
+            container.attach(&add_button, i+1, 2, 1, 1);
+        }
+        None => {
+            label.set_text("You do not have any campaigns yet");
+            container.attach(&label, 0, 0, 1, 1);
+            container.attach(&add_button, 0, 1, 1, 1);
+        }
+    }
     //make amount a button for each campaign
 
+
     //Make a box to put all the buttons in
-    let container = Box::new(gtk::Orientation::Horizontal, 100);
-    container.append(&add_button);
-    container.append(&remove_button);
+    
+
+
 
     //build the window
     let window = ApplicationWindow::builder()
@@ -390,18 +435,32 @@ pub fn create_error_dialog(app: &Application, msg: &str) {
 
 // This function is called by the gui modules to create the campaign
 fn add_campaign(app: &Application, path: &str, sync_option: &str){
-    match env::var("CAMPAIGN_NAME") {
-        Ok(name) => {
-            let campaign = manage_campaign_logic::Campaign {
-                name: String::from(name),
-                path: String::from(path),
-                sync_option: String::from(sync_option)
-            };
-            write_campaign_to_config(campaign);
-        },
-        Err(_) => create_error_dialog(app, "Could not find a campaign name")
-    }
+    let name = match env::var("CAMPAIGN_NAME") {
+        Ok(n) => n,
+        Err(_) => {
+            create_error_dialog(app, "Could not find a campaign name");
+            select_campaign_window(app);
+            return;
+        }    
+    };
 
+    let campaign_values = CampaignData {
+        path : path.to_string(),
+        sync_option: sync_option.to_string()
+    };
 
-    select_campaign_window(app)
+    let mut campaign = HashMap::new();
+    campaign.insert(name, campaign_values);
+
+    match write_campaign_to_config(campaign) {
+        Ok(_) => select_campaign_window(app),
+        Err(error) => {
+            let msg = format!("Could not add campaign: {}", error.to_string());
+            create_error_dialog(app, &msg.as_str());
+            select_campaign_window(app)
+        }
+    }   
 }
+
+
+    
