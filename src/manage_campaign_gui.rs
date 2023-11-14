@@ -1,11 +1,19 @@
 // packages for gui
-use gtk::{prelude::*, ApplicationWindow};
+use gtk::{prelude::*, ApplicationWindow, DialogFlags, ResponseType};
 use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 
 use std::env;
 use std::collections::HashMap;
 
-use crate::manage_campaign_logic::{write_campaign_to_config, read_campaign_from_config, CampaignData};
+
+
+use display_info::DisplayInfo;
+
+
+
+
+
+use crate::manage_campaign_logic::{write_campaign_to_config, read_campaign_from_config, CampaignData, remove_campaign_from_config};
 use crate::run_program;
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
@@ -45,7 +53,6 @@ pub fn select_campaign_window(app: &Application){
             container.attach(&button_remove, i, 2, 1, 1);
             for campaign in list {
                 i += 1;
-                println!("campaign: {}", i.to_string());
                 let campaign_button = Button::builder()
                     .label(&campaign.0)
                     .margin_top(6)
@@ -69,23 +76,14 @@ pub fn select_campaign_window(app: &Application){
             container.attach(&button_add, 0, 1, 1, 1);
         }
     }
-    //make amount a button for each campaign
 
-
-    //Make a box to put all the buttons in
-    
-
-
-
-    //build the window
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Dragon-Display")
         .child(&container)
         .build();
+    
 
-
-    // Connect the widgets to actions
     button_add.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
         add_campaign_page_1(&app);
@@ -96,9 +94,9 @@ pub fn select_campaign_window(app: &Application){
         remove_campaign_window(&app);
     }));
 
-    //connect each button to sync the correct pictures and run the program
-
+    
     window.present();
+
 }
 
 
@@ -106,9 +104,8 @@ pub fn select_campaign_window(app: &Application){
 
 
 
-// The 'add campaign' window
+// The 'add campaign naming' window
 fn add_campaign_page_1(app: &Application) {
-    //setup page 1
     let label = Label::new(Some("Name the campaign"));
     let button_next = Button::builder()
         .label("Next")
@@ -130,7 +127,6 @@ fn add_campaign_page_1(app: &Application) {
         Err(_) => entry.set_text(""),
     }
     entry.buffer().set_max_length(Some(CAMPAIGN_MAX_CHAR_LENGTH));
-    // Get text from this widget: entry.text().as_str()
 
     let page = Grid::new();
     page.attach(&label, 2, 1, 1, 1);
@@ -168,9 +164,8 @@ fn add_campaign_page_1(app: &Application) {
 
 
 
-
+// The 'add campaign sync option' window
 fn add_campaign_page_2(app: &Application) {
-    // setup page 2
     let label = Label::builder()
        .label("Choose synchronization service")
        .margin_top(6)
@@ -241,9 +236,8 @@ fn add_campaign_page_2(app: &Application) {
 
 
 
-
+// The 'add campaign' window for sync option none
 fn add_campaign_page_none(app: &Application) {
-    // setup page (3) none
     match env::current_dir().unwrap().to_str() {
         Some(path) => env::set_var("CAMPAIGN_PATH", path),
         None => env::set_var("CAMPAIGN_PATH", ""),
@@ -356,6 +350,7 @@ fn add_campaign_page_none(app: &Application) {
         window.destroy();
     }));
 
+
     window.present();
 }
 
@@ -365,7 +360,7 @@ fn add_campaign_page_none(app: &Application) {
 
 
 
-   // setup page (3) google drive
+// The 'add campaign' window for sync option google drive
 fn add_campaign_page_gd(app: &Application) {
     let page_gd = Grid::new();
 
@@ -403,6 +398,11 @@ fn remove_campaign_window(app: &Application){
         .build();
 
 
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .build();
+
     let container = Grid::new();
     match campaign_list {
         Some(list) => {
@@ -415,8 +415,20 @@ fn remove_campaign_window(app: &Application){
                     .margin_start(6)
                     .margin_end(6)
                     .build();
-                campaign_button.connect_clicked(glib::clone!(@strong app =>move |_| {
-                    remove_campaign_window_confirm(&app, &campaign);
+                let campaign_name = campaign.0.clone();
+                campaign_button.connect_clicked(glib::clone!(@strong app, @strong window, @strong campaign_name =>move |_| {
+                    let confirm_window = remove_campaign_window_confirm(&window, campaign_name.as_str());
+                    confirm_window.present();
+                    confirm_window.connect_response(glib::clone!(@strong app, @strong confirm_window, @strong campaign_name, @strong window => move |_, response| {
+                        match response {
+                            ResponseType::Yes => {
+                                remove_campaign(&app, campaign_name.as_str());
+                                confirm_window.destroy();
+                                window.destroy()
+                            },
+                            _ => confirm_window.destroy()
+                        }
+                    }));
                 }));
                 container.attach(&campaign_button, i, 1, 1, 1);
                 i += 1;
@@ -435,11 +447,7 @@ fn remove_campaign_window(app: &Application){
         }
     }
 
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Dragon-Display")
-        .child(&container)
-        .build();
+    window.set_child(Some(&container));
 
     button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
@@ -453,7 +461,18 @@ fn remove_campaign_window(app: &Application){
 
 
 
+// A modal window to confirm the removal of a campaign
+fn remove_campaign_window_confirm(window: &ApplicationWindow, campaign_name: &str) -> Dialog {
+    let msg = format!("delete {}?", campaign_name);
+    let buttons = [("On second though, No", ResponseType::No), ("Do it!", ResponseType::Yes)];
+    let window = Dialog::with_buttons(Some(msg), Some(window), DialogFlags::MODAL, &buttons);
+    return window;
+}
 
+
+
+
+// function to create an error dialog
 pub fn create_error_dialog(app: &Application, msg: &str) {
     let label = Label::builder()
         .label(msg)
@@ -522,44 +541,19 @@ fn add_campaign(app: &Application, path: &str, sync_option: &str){
     }   
 }
 
-fn remove_campaign_window_confirm(app: &Application, campaign: &(String, CampaignData)) {
-    let msg = format!("Are you sure you want to delete campaign: {}", campaign.0);
-    let label = Label::builder()
-        .label(msg)
-        .margin_bottom(6)
-        .margin_top(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
-    let button_apply = Button::builder()
-        .label("Yes")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
-    let button_cancel: Button = Button::builder()
-        .label("No")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
 
-    let container = Grid::new();
-    container.attach(&label, 0, 0, 2, 1);
-    container.attach(&button_cancel, 0, 1, 1, 1);
-    container.attach(&button_apply, 1, 1, 1, 1);
 
-    let window = Dialog::builder()
-        .application(app)
-        .child(&container)
-        .build();
-    window.set_modal(true);
 
-}
-
-fn remove_campaign(campaign: &(String, CampaignData)) {
-
+// This function is called by the gui modules to remove given campaign
+// TODO: any envirnoment variables for sync services should be removed
+fn remove_campaign(app: &Application, campaign_name: &str) {
+    match remove_campaign_from_config(campaign_name) {
+        Ok(_) => select_campaign_window(app),
+        Err(error) => {
+            let msg = format!("Could not remove campaign: {}", error.to_string());
+            create_error_dialog(app, &msg.as_str());
+            select_campaign_window(app)
+        }
+    }
 }
     
