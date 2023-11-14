@@ -8,35 +8,28 @@ use std::collections::HashMap;
 use crate::manage_campaign_logic::{write_campaign_to_config, read_campaign_from_config, CampaignData};
 use crate::run_program;
 
-const PATH : &str = "path";
-const SYNC_OPTION : &str = "sync_option";
-
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &Application){
-    //read config -> list of campaigns
     let campaign_list = read_campaign_from_config();
 
-    // Make the widget elements
     let label = Label::builder()
         .margin_top(6)
         .margin_bottom(6)
         .margin_start(6)
         .margin_end(6)
         .build();
-
-    let add_button = Button::builder()
+    let button_add = Button::builder()
         .label("add campaign")
         .margin_top(6)
         .margin_bottom(6)
         .margin_start(6)
         .margin_end(6)
         .build();
-
-    let remove_button = Button::builder()
+    let button_remove = Button::builder()
         .label("remove campaign")
         .margin_top(6)
         .margin_bottom(6)
@@ -49,9 +42,10 @@ pub fn select_campaign_window(app: &Application){
         Some(list) => {
             label.set_text("Select a campaign");
             let mut i = 0;
-            container.attach(&remove_button, i, 2, 1, 1);
+            container.attach(&button_remove, i, 2, 1, 1);
             for campaign in list {
                 i += 1;
+                println!("campaign: {}", i.to_string());
                 let campaign_button = Button::builder()
                     .label(&campaign.0)
                     .margin_top(6)
@@ -67,12 +61,12 @@ pub fn select_campaign_window(app: &Application){
             } else {
                 container.attach(&label, (i/2)+1, 0, 1, 1);
             }
-            container.attach(&add_button, i+1, 2, 1, 1);
+            container.attach(&button_add, i+1, 2, 1, 1);
         }
         None => {
             label.set_text("You do not have any campaigns yet");
             container.attach(&label, 0, 0, 1, 1);
-            container.attach(&add_button, 0, 1, 1, 1);
+            container.attach(&button_add, 0, 1, 1, 1);
         }
     }
     //make amount a button for each campaign
@@ -92,9 +86,14 @@ pub fn select_campaign_window(app: &Application){
 
 
     // Connect the widgets to actions
-    add_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+    button_add.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
         add_campaign_page_1(&app);
+    }));
+
+    button_remove.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        window.destroy();
+        remove_campaign_window(&app);
     }));
 
     //connect each button to sync the correct pictures and run the program
@@ -385,8 +384,69 @@ fn add_campaign_page_gd(app: &Application) {
 
 
 // The 'remove campaign' window
-fn remove_campaign_window(){
-    todo!();
+fn remove_campaign_window(app: &Application){
+    let campaign_list = read_campaign_from_config();
+
+    let label = Label::builder()
+        .label("Select the campaign you want to remove")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let button_cancel = Button::builder()
+        .label("Cancel")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
+
+    let container = Grid::new();
+    match campaign_list {
+        Some(list) => {
+            let mut i = 0;
+            for campaign in list {
+                let campaign_button = Button::builder()
+                    .label(&campaign.0)
+                    .margin_top(6)
+                    .margin_bottom(6)
+                    .margin_start(6)
+                    .margin_end(6)
+                    .build();
+                campaign_button.connect_clicked(glib::clone!(@strong app =>move |_| {
+                    remove_campaign_window_confirm(&app, &campaign);
+                }));
+                container.attach(&campaign_button, i, 1, 1, 1);
+                i += 1;
+            }
+            i -= 1;
+            if i%2 == 0 {
+                container.attach(&label, i/2, 0, 1, 1);
+                container.attach(&button_cancel, i/2, 2, 1, 1);
+            } else {
+                container.attach(&label, i/2, 0, 2, 1);
+                container.attach(&button_cancel, i/2, 2, 2, 1);
+            }
+        }
+        None => {
+            create_error_dialog(app, "There are no campaigns to remove!");
+        }
+    }
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&container)
+        .build();
+
+    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        window.destroy();
+        select_campaign_window(&app)
+    }));
+
+    window.present();
 }
 
 
@@ -424,7 +484,7 @@ pub fn create_error_dialog(app: &Application, msg: &str) {
         window.destroy()
     }));
 
-    window.show()
+    window.present()
 }
 
 
@@ -462,5 +522,44 @@ fn add_campaign(app: &Application, path: &str, sync_option: &str){
     }   
 }
 
+fn remove_campaign_window_confirm(app: &Application, campaign: &(String, CampaignData)) {
+    let msg = format!("Are you sure you want to delete campaign: {}", campaign.0);
+    let label = Label::builder()
+        .label(msg)
+        .margin_bottom(6)
+        .margin_top(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let button_apply = Button::builder()
+        .label("Yes")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let button_cancel: Button = Button::builder()
+        .label("No")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
 
+    let container = Grid::new();
+    container.attach(&label, 0, 0, 2, 1);
+    container.attach(&button_cancel, 0, 1, 1, 1);
+    container.attach(&button_apply, 1, 1, 1, 1);
+
+    let window = Dialog::builder()
+        .application(app)
+        .child(&container)
+        .build();
+    window.set_modal(true);
+
+}
+
+fn remove_campaign(campaign: &(String, CampaignData)) {
+
+}
     

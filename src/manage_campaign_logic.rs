@@ -31,7 +31,7 @@ pub fn read_campaign_from_config() -> Option<HashMap<String, CampaignData>> {
             return None
         }
     };
-
+    println!("contents: \n{}", contents);
     let config: Config = match toml::from_str(&contents) {
         Ok(d) => d,
         Err(_) => {
