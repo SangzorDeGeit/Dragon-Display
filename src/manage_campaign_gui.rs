@@ -1,9 +1,10 @@
 // packages for gui
 use gtk::{prelude::*, ApplicationWindow, DialogFlags, ResponseType};
-use gtk::{Application, Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
+use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 
 use std::env;
 use std::collections::HashMap;
+use std::io::{Error, ErrorKind};
 
 
 
@@ -21,7 +22,7 @@ const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
 // The "main"/"select campaign" window
-pub fn select_campaign_window(app: &Application){
+pub fn select_campaign_window(app: &adw::Application){
     let campaign_list = read_campaign_from_config();
 
     let label = Label::builder()
@@ -94,7 +95,9 @@ pub fn select_campaign_window(app: &Application){
         remove_campaign_window(&app);
     }));
 
-    
+    let size = window.default_size();
+    println!("width: {}, height: {}", size.0.to_string(), size.1.to_string());
+
     window.present();
 
 }
@@ -105,7 +108,7 @@ pub fn select_campaign_window(app: &Application){
 
 
 // The 'add campaign naming' window
-fn add_campaign_page_1(app: &Application) {
+fn add_campaign_page_1(app: &adw::Application) {
     let label = Label::new(Some("Name the campaign"));
     let button_next = Button::builder()
         .label("Next")
@@ -142,15 +145,19 @@ fn add_campaign_page_1(app: &Application) {
 
     button_next.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
         let input = String::from(entry.text().as_str());
-        if input.chars().all(char::is_whitespace) {
-            create_error_dialog(&app, "name may not be empty");
-        } else {
-            env::set_var("CAMPAIGN_NAME", input.as_str());
-            add_campaign_page_2(&app);
-            window.destroy();
+        match valid_name(&input) {
+            Ok(_) => {
+                env::set_var("CAMPAIGN_NAME", input.as_str());
+                add_campaign_page_2(&app);
+                window.destroy();
+            }
+            Err(error) => {
+                let msg = format!("Could not add campaign: {}", error.to_string());
+                create_error_dialog(&app, &msg)
+            }
         }
-
     }));
+
     button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
         select_campaign_window(&app)
@@ -161,11 +168,30 @@ fn add_campaign_page_1(app: &Application) {
 
 
 
+// Checks for valid name
+fn valid_name(name: &str) -> Result<(), Error> {
+    if name.chars().all(char::is_whitespace) {
+        return Err(Error::from(ErrorKind::InvalidInput))
+    }
+
+    let campaign_list = match read_campaign_from_config() {
+        Some(c) => c,
+        None => return Ok(())
+    };
+
+    for campaign in campaign_list {
+        if campaign.0 == name {
+            return Err(Error::from(ErrorKind::AlreadyExists))
+        }
+    }
+
+    Ok(())
+}
 
 
 
 // The 'add campaign sync option' window
-fn add_campaign_page_2(app: &Application) {
+fn add_campaign_page_2(app: &adw::Application) {
     let label = Label::builder()
        .label("Choose synchronization service")
        .margin_top(6)
@@ -237,7 +263,7 @@ fn add_campaign_page_2(app: &Application) {
 
 
 // The 'add campaign' window for sync option none
-fn add_campaign_page_none(app: &Application) {
+fn add_campaign_page_none(app: &adw::Application) {
     match env::current_dir().unwrap().to_str() {
         Some(path) => env::set_var("CAMPAIGN_PATH", path),
         None => env::set_var("CAMPAIGN_PATH", ""),
@@ -361,7 +387,7 @@ fn add_campaign_page_none(app: &Application) {
 
 
 // The 'add campaign' window for sync option google drive
-fn add_campaign_page_gd(app: &Application) {
+fn add_campaign_page_gd(app: &adw::Application) {
     let page_gd = Grid::new();
 
     let window = ApplicationWindow::builder()
@@ -379,7 +405,7 @@ fn add_campaign_page_gd(app: &Application) {
 
 
 // The 'remove campaign' window
-fn remove_campaign_window(app: &Application){
+fn remove_campaign_window(app: &adw::Application){
     let campaign_list = read_campaign_from_config();
 
     let label = Label::builder()
@@ -398,7 +424,7 @@ fn remove_campaign_window(app: &Application){
         .build();
 
 
-    let window = ApplicationWindow::builder()
+    let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Dragon-Display")
         .build();
@@ -462,7 +488,7 @@ fn remove_campaign_window(app: &Application){
 
 
 // A modal window to confirm the removal of a campaign
-fn remove_campaign_window_confirm(window: &ApplicationWindow, campaign_name: &str) -> Dialog {
+fn remove_campaign_window_confirm(window: &adw::ApplicationWindow, campaign_name: &str) -> Dialog {
     let msg = format!("delete {}?", campaign_name);
     let buttons = [("On second though, No", ResponseType::No), ("Do it!", ResponseType::Yes)];
     let window = Dialog::with_buttons(Some(msg), Some(window), DialogFlags::MODAL, &buttons);
@@ -473,7 +499,7 @@ fn remove_campaign_window_confirm(window: &ApplicationWindow, campaign_name: &st
 
 
 // function to create an error dialog
-pub fn create_error_dialog(app: &Application, msg: &str) {
+pub fn create_error_dialog(app: &adw::Application, msg: &str) {
     let label = Label::builder()
         .label(msg)
         .margin_bottom(6)
@@ -513,7 +539,7 @@ pub fn create_error_dialog(app: &Application, msg: &str) {
 
 
 // This function is called by the gui modules to create the campaign
-fn add_campaign(app: &Application, path: &str, sync_option: &str){
+fn add_campaign(app: &adw::Application, path: &str, sync_option: &str){
     let name = match env::var("CAMPAIGN_NAME") {
         Ok(n) => n,
         Err(_) => {
@@ -546,7 +572,7 @@ fn add_campaign(app: &Application, path: &str, sync_option: &str){
 
 // This function is called by the gui modules to remove given campaign
 // TODO: any envirnoment variables for sync services should be removed
-fn remove_campaign(app: &Application, campaign_name: &str) {
+fn remove_campaign(app: &adw::Application, campaign_name: &str) {
     match remove_campaign_from_config(campaign_name) {
         Ok(_) => select_campaign_window(app),
         Err(error) => {

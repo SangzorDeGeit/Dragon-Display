@@ -1,8 +1,7 @@
-use std::{fs::{File, OpenOptions, self}, io::{Write, self, ErrorKind, Read}};
+use std::{fs::{File, OpenOptions, self}, io::{Write, self, Error, ErrorKind, Read}};
 use serde::{Deserialize, Serialize};
 use toml::to_string;
 use std::env;
-use std::io::Error;
 use std::collections::HashMap;
 
 const CONFIG_OPERATION_READ : u8 = 0;
