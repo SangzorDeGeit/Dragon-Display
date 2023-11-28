@@ -1,6 +1,7 @@
 // packages for gui
-use gtk::{prelude::*, ApplicationWindow, DialogFlags, ResponseType};
+use gtk::{DialogFlags, ResponseType,ApplicationWindow};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
+use adw::{prelude::*, Clamp};
 
 use std::env;
 use std::collections::HashMap;
@@ -23,6 +24,10 @@ const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application){
+
+    // use the settings var to store information about the gui
+    // let settings = Settings::new(APP_ID);
+
     let campaign_list = read_campaign_from_config();
 
     let label = Label::builder()
@@ -77,6 +82,10 @@ pub fn select_campaign_window(app: &adw::Application){
             container.attach(&button_add, 0, 1, 1, 1);
         }
     }
+
+    let clamp = Clamp::builder()
+        .child(&container)
+        .maximum_size(24);
 
     let window = ApplicationWindow::builder()
         .application(app)

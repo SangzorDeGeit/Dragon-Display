@@ -10,7 +10,7 @@ pub mod manage_campaign_logic;
 
 use display_info::DisplayInfo;
 
-const APP_ID: &str = "Dragon-Display";
+pub const APP_ID: &str = "Dragon-Display";
 
 
 fn main()-> glib::ExitCode {
