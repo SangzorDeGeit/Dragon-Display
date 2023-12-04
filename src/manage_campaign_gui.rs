@@ -1,7 +1,7 @@
 // packages for gui
 use gtk::{DialogFlags, ResponseType,ApplicationWindow};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
-use adw::{prelude::*, Clamp};
+use adw::prelude::*;
 
 use std::env;
 use std::collections::HashMap;
@@ -83,14 +83,11 @@ pub fn select_campaign_window(app: &adw::Application){
         }
     }
 
-    let clamp = Clamp::builder()
-        .child(&container)
-        .maximum_size(24);
-
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Dragon-Display")
         .child(&container)
+        .resizable(false)
         .build();
     
 
@@ -103,9 +100,6 @@ pub fn select_campaign_window(app: &adw::Application){
         window.destroy();
         remove_campaign_window(&app);
     }));
-
-    let size = window.default_size();
-    println!("width: {}, height: {}", size.0.to_string(), size.1.to_string());
 
     window.present();
 
@@ -150,6 +144,7 @@ fn add_campaign_page_1(app: &adw::Application) {
         .application(app)
         .title("Add Campaign")
         .child(&page)
+        .resizable(false)
         .build();
 
     button_next.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
@@ -240,6 +235,7 @@ fn add_campaign_page_2(app: &adw::Application) {
         .application(app)
         .title("Add Campaign")
         .child(&page_2)
+        .resizable(false)
         .build();
 
     button_previous.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
@@ -335,6 +331,7 @@ fn add_campaign_page_none(app: &adw::Application) {
         .application(app)
         .title("Add Campaign")
         .child(&page_none)
+        .resizable(false)
         .build();
 
 
@@ -403,6 +400,7 @@ fn add_campaign_page_gd(app: &adw::Application) {
         .application(app)
         .title("Add Campaign")
         .child(&page_gd)
+        .resizable(false)
         .build();
 
     window.present();
@@ -436,6 +434,7 @@ fn remove_campaign_window(app: &adw::Application){
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Dragon-Display")
+        .resizable(false)
         .build();
 
     let container = Grid::new();
@@ -482,7 +481,7 @@ fn remove_campaign_window(app: &adw::Application){
         }
     }
 
-    window.set_child(Some(&container));
+    window.set_content(Some(&container));
 
     button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
@@ -531,6 +530,7 @@ pub fn create_error_dialog(app: &adw::Application, msg: &str) {
     let window = Dialog::builder()
         .application(app)
         .child(&container)
+        .resizable(false)
         .build();
     window.set_modal(true);
 

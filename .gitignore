@@ -1,5 +1,4 @@
 /target
 /campaigns
 .config.toml
-test.toml
-/src/toml_test.rs
+

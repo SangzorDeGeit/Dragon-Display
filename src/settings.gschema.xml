@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<schemalist>
-    <schema id="Dragon-Display" path="/Dragon-Display/">
-        <key name="is-maximized" type="b">
-            <default>false</default>
-            <summary>default swith state</summary>
-        </key>
-    </schema>
-</schemalist>

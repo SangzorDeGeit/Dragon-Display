@@ -1,6 +1,6 @@
 //GUI crates
 use gtk::prelude::*;
-use gtk::{glib, Application};
+use gtk::glib;
 use manage_campaign_logic::CampaignData;
 
 //imported modules
@@ -8,7 +8,6 @@ pub mod manage_campaign_gui;
 pub mod google_drive_sync;
 pub mod manage_campaign_logic;
 
-use display_info::DisplayInfo;
 
 pub const APP_ID: &str = "Dragon-Display";
 
@@ -23,11 +22,4 @@ fn main()-> glib::ExitCode {
 
 fn run_program(campaign: &(String, CampaignData)){
     todo!()
-}
-
-fn get_monitor_info(){
-    let display_infos = DisplayInfo::all().unwrap();
-    for display_info in display_infos {
-      println!("display_info {display_info:?}");
-    } 
 }
