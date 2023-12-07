@@ -1,5 +1,5 @@
 #!/bin/bash
 
-pkgs=(libgtk-4-dev build-essential)
+pkgs=(libgtk-4-dev build-essential libadwaita-1-dev)
 sudo apt-get -y --ignore-missing install "${pkgs[@]}"
 

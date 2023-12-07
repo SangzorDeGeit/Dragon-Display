@@ -18,3 +18,4 @@ gtk = { version = "0.7.3", package = "gtk4", features = ["v4_8"] }
 gdk4 = "0.7.3"
 display-info = "0.4.3"
 adw = { version = "0.5.3", package = "libadwaita", features = ["v1_2"] }
+futures = "0.3.29"

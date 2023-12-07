@@ -9,12 +9,10 @@ use std::io::{Error, ErrorKind};
 
 
 
-use display_info::DisplayInfo;
 
 
 
-
-
+use crate::google_drive_sync;
 use crate::manage_campaign_logic::{write_campaign_to_config, read_campaign_from_config, CampaignData, remove_campaign_from_config};
 use crate::run_program;
 
@@ -395,14 +393,57 @@ fn add_campaign_page_none(app: &adw::Application) {
 // The 'add campaign' window for sync option google drive
 fn add_campaign_page_gd(app: &adw::Application) {
     let page_gd = Grid::new();
-
+    let label = Label::builder()
+        .label("In order to use the google drive synchronization service\n
+        you need to give dragon display permission to connect to your google account.")
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    let button_connect = Button::builder()
+        .label("connect")
+        .margin_bottom(6)
+        .margin_end(6)
+        .margin_start(6)
+        .margin_top(6)
+        .build();
+    let button_cancel = Button::builder()
+        .label("cancel")
+        .margin_bottom(6)
+        .margin_end(6)
+        .margin_start(6)
+        .margin_top(6)
+        .build();
+    
+    page_gd.attach(&label, 0, 0, 2, 1);
+    page_gd.attach(&button_connect, 0, 1, 1, 1);
+    page_gd.attach(&button_cancel, 1, 1, 1, 1);
+    
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Add Campaign")
         .child(&page_gd)
-        .resizable(false)
         .build();
-
+    
+    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        window.destroy();
+        select_campaign_window(&app)
+    }));
+    
+    button_connect.connect_clicked(glib::clone!(@strong app => move |_| {
+        match google_drive_sync::get_token() {
+            Ok(t) => {
+                let token = t.access_token;
+                env::set_var("GOOGLE_DRIVE_ACCESS_TOKEN", &token);
+                println!("Access token: {}", &token)
+            },
+            Err(error) => {
+                let msg = format!("Could not add campaign: {}", error.to_string());
+                create_error_dialog(&app, &msg.as_str());
+                select_campaign_window(&app)
+            }
+        }
+    }));
+    
     window.present();
 }
 

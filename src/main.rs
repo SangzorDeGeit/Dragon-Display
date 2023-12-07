@@ -23,3 +23,4 @@ fn main()-> glib::ExitCode {
 fn run_program(campaign: &(String, CampaignData)){
     todo!()
 }
+
