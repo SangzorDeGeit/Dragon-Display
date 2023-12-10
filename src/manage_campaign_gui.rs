@@ -2,6 +2,7 @@
 use gtk::{DialogFlags, ResponseType,ApplicationWindow};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 use adw::prelude::*;
+use gdk4::Display;
 
 use std::env;
 use std::collections::HashMap;
@@ -100,6 +101,20 @@ pub fn select_campaign_window(app: &adw::Application){
     }));
 
     window.present();
+    // let display = gdk4::Display::default();
+    // match display {
+    //     Some(d) => {
+    //         let monitor_list = d.monitors().item(0);
+    //         match monitor_list {
+    //             Some(m) => {
+    //                 let monitor: gdk4::Monitor = m.try_into().unwrap();
+    //             },
+    //             None => {}
+    //         }
+            
+    //     },
+    //     None => {}
+    // }
 
 }
 
@@ -359,7 +374,7 @@ fn add_campaign_page_none(app: &adw::Application) {
     button_choose.connect_clicked(glib::clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
     button_default.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         match env::current_dir().unwrap().to_str() {
-            Some(path) => add_campaign(&app, path, "None"),
+            Some(path) => add_none_campaign(&app, path, "None"),
             None => create_error_dialog(&app, "could not find the default directory"),
         }
         window.destroy();
@@ -374,7 +389,7 @@ fn add_campaign_page_none(app: &adw::Application) {
     }));
     button_finish.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         match env::var("CAMPAIGN_PATH") {
-            Ok(path) => add_campaign(&app, &path, "None"),
+            Ok(path) => add_none_campaign(&app, &path, "None"),
             Err(_) => create_error_dialog(&app, "Select a location for the image folder")
         };
         window.destroy();
@@ -429,12 +444,13 @@ fn add_campaign_page_gd(app: &adw::Application) {
         select_campaign_window(&app)
     }));
     
-    button_connect.connect_clicked(glib::clone!(@strong app => move |_| {
-        match google_drive_sync::get_token() {
+    button_connect.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
+        match google_drive_sync::initialize() {
             Ok(t) => {
                 let token = t.access_token;
                 env::set_var("GOOGLE_DRIVE_ACCESS_TOKEN", &token);
-                println!("Access token: {}", &token)
+                add_gd_campaign(&app, &token, "Google Drive");
+                window.destroy();
             },
             Err(error) => {
                 let msg = format!("Could not add campaign: {}", error.to_string());
@@ -584,12 +600,33 @@ pub fn create_error_dialog(app: &adw::Application, msg: &str) {
 
 
 
+//TODO: MAKE FOLLOWING TWO FUNCTIONS INTO ONE FUNCTION, CURRENTLY TWO DIFFERENT FUNCTIONS SINCE NOT SURE WHAT GOOGLE DRIVE NEEDS
+fn add_gd_campaign(app: &adw::Application, access_token: &str, sync_option: &str) {
+    let campaign_values = CampaignData {
+        sync_option: sync_option.to_string(),
+        path : None,
+        access_token: Some(access_token.to_string())
+    };
 
+    add_campaign(&app, campaign_values)
+}
+
+
+fn add_none_campaign(app: &adw::Application, path: &str, sync_option: &str) {
+    let campaign_values = CampaignData {
+        sync_option: sync_option.to_string(),
+        path : Some(path.to_string()),
+        access_token: None
+    };
+
+    add_campaign(&app, campaign_values)
+
+}
 
 
 
 // This function is called by the gui modules to create the campaign
-fn add_campaign(app: &adw::Application, path: &str, sync_option: &str){
+fn add_campaign(app: &adw::Application, campaign_values: CampaignData){
     let name = match env::var("CAMPAIGN_NAME") {
         Ok(n) => n,
         Err(_) => {
@@ -599,13 +636,8 @@ fn add_campaign(app: &adw::Application, path: &str, sync_option: &str){
         }    
     };
 
-    let campaign_values = CampaignData {
-        path : path.to_string(),
-        sync_option: sync_option.to_string()
-    };
-
     let mut campaign = HashMap::new();
-    campaign.insert(name, campaign_values);
+    campaign.insert(name.to_string(), campaign_values);
 
     match write_campaign_to_config(campaign) {
         Ok(_) => select_campaign_window(app),

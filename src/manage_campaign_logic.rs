@@ -16,8 +16,9 @@ struct Config {
 
 #[derive(Serialize, Deserialize)]
 pub struct CampaignData {
-    pub path : String,
-    pub sync_option : String
+    pub sync_option : String,
+    pub path : Option<String>,
+    pub access_token : Option<String>
 }
 
 
@@ -32,7 +33,6 @@ pub fn read_campaign_from_config() -> Option<HashMap<String, CampaignData>> {
     match file.read_to_string(&mut contents) {
         Ok(_) => {},
         Err(_) => return None
-
     };
 
     let config: Config = match toml::from_str(&contents) {

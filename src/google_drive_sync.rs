@@ -1,4 +1,4 @@
-use std::{env,io::{self, Error, ErrorKind}, thread::AccessError};
+use std::{env,io::{self, Error, ErrorKind}};
 use rouille::{Server, Response};
 use google_drive::{Client, AccessToken};
 use open;
@@ -8,11 +8,9 @@ use tokio::runtime::Handle;
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
-pub fn get_token() -> Result<AccessToken, io::Error> {
-    todo!();
-}
 
-pub async fn initialize() -> Result<AccessToken, io::Error> {
+
+pub fn initialize() -> Result<AccessToken, io::Error> {
     let mut google_drive_client = Client::new(
         "1043613452788-ij2c5k1k19jf4rqf8o0fg2hh0t71kvct.apps.googleusercontent.com",
         "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",
@@ -35,7 +33,9 @@ pub async fn initialize() -> Result<AccessToken, io::Error> {
 
     match code_state {
         (Ok(code), Ok(state)) => {
-            let access_token = google_drive_client.get_access_token(&code, &state).await.unwrap();
+            let handle = Handle::current();
+            let _ = handle.enter();
+            let access_token = futures::executor::block_on(async move {google_drive_client.get_access_token(&code, &state).await.unwrap()});
             return Ok(access_token)
         },
         _ => Err(Error::from(ErrorKind::WriteZero)),
