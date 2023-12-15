@@ -23,11 +23,8 @@ pub struct CampaignData {
 
 
 
-pub fn read_campaign_from_config() -> Option<HashMap<String, CampaignData>> {
-    let mut file = match get_campaign_config(CONFIG_OPERATION_READ) {
-        Ok(file) => file,
-        Err(_) => return None
-    };
+pub fn read_campaign_from_config() -> Result<HashMap<String, CampaignData>, Error> {
+    let mut file = get_campaign_config(CONFIG_OPERATION_READ)?;
 
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
@@ -55,10 +52,7 @@ pub fn write_campaign_to_config(campaign: HashMap<String, CampaignData>) -> Resu
 
 
 pub fn remove_campaign_from_config(campaign_name: &str) -> Result<(), io::Error> {
-    let campaign_list = match read_campaign_from_config() {
-        Some(list) => list,
-        None => return Err(Error::from(ErrorKind::NotFound))
-    };
+    let campaign_list = read_campaign_from_config()?;
 
     let mut new_campaign_list = HashMap::new();
 

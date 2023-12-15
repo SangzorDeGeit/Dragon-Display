@@ -451,7 +451,6 @@ fn valid_name(name: &str) -> Result<(), Error> {
 
 
 
-
 // The 'remove campaign' window
 fn remove_campaign_window(app: &adw::Application){
     let campaign_list = read_campaign_from_config();
