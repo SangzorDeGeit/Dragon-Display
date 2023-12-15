@@ -1,5 +1,5 @@
 // packages for gui
-use gtk::{DialogFlags, ResponseType,ApplicationWindow};
+use gtk::{DialogFlags, ResponseType,ApplicationWindow, Stack};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 use adw::prelude::*;
 
@@ -14,6 +14,7 @@ use crate::manage_campaign::{config::read_campaign_from_config, add_gd_campaign,
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
+
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application){
@@ -75,18 +76,19 @@ pub fn select_campaign_window(app: &adw::Application){
             container.attach(&button_add, 0, 1, 1, 1);
         }
     }
+    container.set_halign(gtk::Align::Center);
+    container.set_valign(gtk::Align::Center);
 
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Dragon-Display")
         .child(&container)
-        .resizable(false)
         .build();
     
 
     button_add.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
         window.destroy();
-        add_campaign_page_1(&app);
+        add_campaign_window(&app);
     }));
 
     button_remove.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
@@ -99,19 +101,21 @@ pub fn select_campaign_window(app: &adw::Application){
 
 
 
-
-
-
-// The 'add campaign naming' window
-fn add_campaign_page_1(app: &adw::Application) {
-    let label = Label::new(Some("Name the campaign"));
-    let button_next = Button::builder()
-        .label("Next")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
+fn add_campaign_window(app: &adw::Application) {
+    //The stack contains the different pages to setup a new campaign
+    let stack = Stack::new();
+    
+    //create the window
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Add Campaign")
+        .child(&stack)
+        .resizable(true)
+        .default_width(400)
+        .default_height(100)
         .build();
+
+    //initialize general widgets(s)
     let button_cancel = Button::builder()
         .label("Cancel")
         .margin_top(6)
@@ -119,33 +123,195 @@ fn add_campaign_page_1(app: &adw::Application) {
         .margin_start(6)
         .margin_end(6)
         .build();
-    let entry = Entry::new();
+
+    //initialize widgets for page 1
+    let label_1 = Label::builder()
+        .label("Name the campaign")
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    let button_next_1 = Button::builder()
+        .label("Next")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let entry_1 = Entry::new();
     match env::var("CAMPAIGN_NAME"){
-        Ok(name) => entry.set_text(&name),
-        Err(_) => entry.set_text(""),
+        Ok(name) => entry_1.set_text(&name),
+        Err(_) => entry_1.set_text(""),
     }
-    entry.buffer().set_max_length(Some(CAMPAIGN_MAX_CHAR_LENGTH));
+    entry_1.buffer().set_max_length(Some(CAMPAIGN_MAX_CHAR_LENGTH));
 
-    let page = Grid::new();
-    page.attach(&label, 2, 1, 1, 1);
-    page.attach(&entry, 2, 2, 1, 1);
-    page.attach(&button_next, 3, 3, 1, 1);
-    page.attach(&button_cancel, 1, 3, 1, 1);
+    let page_1 = Grid::new();
+    page_1.attach(&label_1, 2, 1, 1, 1);
+    page_1.attach(&entry_1, 2, 2, 1, 1);
+    page_1.attach(&button_next_1, 3, 3, 1, 1);
+    page_1.attach(&button_cancel, 1, 3, 1, 1);
+    page_1.set_halign(gtk::Align::Center);
+    page_1.set_valign(gtk::Align::Center);
 
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Add Campaign")
-        .child(&page)
-        .resizable(false)
+
+
+    //initialize widgets for page 2
+    let label_2 = Label::builder()
+        .label("Choose synchronization service")
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    let button_next_2 = Button::builder()
+        .label("Next")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let button_previous_2 = Button::builder()
+        .label("Back")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+    let dropdown_2 = DropDown::from_strings(&SYNCHRONIZATION_OPTIONS);
+
+    let page_2 = Grid::new();
+    page_2.attach(&label_2, 2, 1, 1, 1);
+    page_2.attach(&button_previous_2, 2, 3, 1, 1);
+    page_2.attach(&button_next_2, 3, 3, 1, 1);
+    page_2.attach(&button_cancel, 1, 3, 1, 1);
+    page_2.attach(&dropdown_2, 2, 2, 1, 1);
+    page_2.set_halign(gtk::Align::Center);
+    page_2.set_valign(gtk::Align::Center);
+
+
+
+    // initalize widgets for page 3
+    match env::current_dir().unwrap().to_str() {
+        Some(path) => env::set_var("CAMPAIGN_PATH", path),
+        None => env::set_var("CAMPAIGN_PATH", ""),
+    }
+    let label_3 = Label::builder()
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .wrap(true)
+        .build();
+        match env::var("CAMPAIGN_PATH") {
+            Ok(path) => label_3.set_text(format!("Choose location of the image folder, this the folder where all the images to be displayed by the program are stored. Current location: {}", &path).as_str()),
+            Err(_) => label_3.set_text("Choose location of image folder, this the folder where all the images to be displayed by the program are stored."),
+        }
+    let button_default_3 = Button::builder()
+        .label("Use Default")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();    
+     let button_choose_3 = Button::builder()
+        .label("Choose Location")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+     let button_previous_3 = Button::builder()
+        .label("Back")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+     let button_next_3 = Button::builder()
+        .label("Next")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
         .build();
 
-    button_next.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
-        let input = String::from(entry.text().as_str());
+    let file_chooser = FileChooserNative::new(
+        Some("Choose location of image folder"),
+        Some(&window),
+        gtk::FileChooserAction::SelectFolder,
+        Some("Select"),
+        Some("Cancel")
+    );
+
+    let page_3 = Grid::new();
+    page_3.attach(&label_3, 1, 1, 3, 1);
+    page_3.attach(&button_previous_3, 2, 3, 1, 1);
+    page_3.attach(&button_cancel, 1, 3, 1, 1);
+    page_3.attach(&button_default_3, 3, 2, 1, 1);
+    page_3.attach(&button_choose_3, 2, 2, 1, 1);
+    page_3.attach(&button_next_3, 3, 3, 1, 1);
+    page_3.set_halign(gtk::Align::Center);
+    page_3.set_valign(gtk::Align::Center);
+
+
+
+
+    // initalize widgets for (optional) page 4 -> Google Drive (gd)
+    let label_4_gd = Label::builder()
+        .label("In order to use the google drive synchronization service you need to give dragon display permission to connect to your google account.")
+        .margin_top(6)
+        .margin_bottom(6)
+        .wrap(true)
+        .build();
+    let button_connect_4_gd = Button::builder()
+        .label("Connect")
+        .margin_bottom(6)
+        .margin_end(6)
+        .margin_start(6)
+        .margin_top(6)
+        .build();
+    let button_previous_4_gd = Button::builder()
+        .label("Back")
+        .margin_bottom(6)
+        .margin_end(6)
+        .margin_start(6)
+        .margin_top(6)
+        .build();
+
+    let page_4_gd = Grid::new();
+    page_4_gd.attach(&label_4_gd, 0, 0, 2, 1);
+    page_4_gd.attach(&button_connect_4_gd, 1, 1, 1, 1);
+    page_4_gd.attach(&button_previous_4_gd, 0, 1, 1, 1);
+    page_4_gd.attach(&button_cancel, 1, 1, 1, 1);
+    page_4_gd.set_halign(gtk::Align::Center);
+    page_4_gd.set_valign(gtk::Align::Center);
+
+
+
+    //add all pages to the stack
+    stack.add_child(&page_1);
+    stack.add_child(&page_2);
+    stack.add_child(&page_3);
+    stack.add_child(&page_4_gd);
+    stack.set_visible_child(&page_1);
+
+
+
+
+
+    //set actions for general widget(s)
+    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+        window.destroy();
+        select_campaign_window(&app)
+    }));
+
+
+
+
+    //set actions for widgets of page 1
+    button_next_1.connect_clicked(glib::clone!(@strong app, @strong stack, @strong page_2 => move |_| {
+        let input = String::from(entry_1.text().as_str());
         match valid_name(&input) {
             Ok(_) => {
                 env::set_var("CAMPAIGN_NAME", input.as_str());
-                add_campaign_page_2(&app);
-                window.destroy();
+                stack.set_visible_child(&page_2)
             }
             Err(error) => {
                 let msg = format!("Could not add campaign: {}", error.to_string());
@@ -154,14 +320,113 @@ fn add_campaign_page_1(app: &adw::Application) {
         }
     }));
 
-    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        select_campaign_window(&app)
+
+
+
+    //set actions for widgets of page 2
+    button_previous_2.connect_clicked(glib::clone!(@strong stack => move |_| {
+        stack.set_visible_child(&page_1);
+    }));
+    button_next_2.connect_clicked(glib::clone!(@strong stack, @strong page_3, @strong button_next_3, @strong dropdown_2 => move |_| {
+        match dropdown_2.selected(){
+            0 => {
+                button_next_3.set_label("Finish")
+            },
+            _ => {
+                button_next_3.set_label("Next")
+            },
+        }
+        stack.set_visible_child(&page_3)
     }));
 
-    window.present();
-}
+    
 
+
+    //set actions for widgets of page 3
+    file_chooser.connect_response(glib::clone!(@strong label_3 => move |file_chooser, response| {
+        match response {
+            gtk::ResponseType::Accept => {
+                match file_chooser.file() {
+                    Some(f) => {
+                        label_3.set_text(format!("Choose location of the image folder. Current location: {}", f.path().unwrap().to_str().unwrap()).as_str());
+                        env::set_var("CAMPAIGN_PATH", f.path().unwrap().to_str().unwrap())
+                    },
+                    None => {}
+                }
+            },
+            _ => {}
+        }
+    }));
+    button_choose_3.connect_clicked(glib::clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
+    button_default_3.connect_clicked(glib::clone!(@strong app, @strong window, @strong stack, @strong dropdown_2, @strong page_4_gd => move |_| {
+        match env::current_dir().unwrap().to_str() {
+            Some(path) => {
+                env::set_var("CAMPAIGN_PATH", path);
+                label_3.set_text(format!("Choose location of the image folder. Current location: {}", path).as_str());
+            },
+            None => create_error_dialog(&app, "could not find the default directory"),
+        }
+        match dropdown_2.selected(){
+            0 => {
+                match env::var("CAMPAIGN_PATH") {
+                    Ok(path) => {
+                        add_none_campaign(&app, &path, "None");
+                        window.destroy();
+                    },
+                    Err(_) => create_error_dialog(&app, "Select a location for the image folder")
+                };
+            },
+            _ => stack.set_visible_child(&page_4_gd),
+        }
+    }));
+    button_previous_3.connect_clicked(glib::clone!(@strong stack, @strong page_2 =>move |_| {
+        stack.set_visible_child(&page_2)
+    }));
+    button_next_3.connect_clicked(glib::clone!(@strong app, @strong window, @strong stack => move |_| {
+        match dropdown_2.selected(){
+            0 => {
+                match env::var("CAMPAIGN_PATH") {
+                    Ok(path) => add_none_campaign(&app, &path, "None"),
+                    Err(_) => create_error_dialog(&app, "Select a location for the image folder")
+                };
+                window.destroy();
+            },
+            _ => {
+                stack.set_visible_child(&page_4_gd)
+            },
+        }
+    }));
+
+
+
+
+    //set actions for widgets of optional page 4 -> Google Drive (gd)
+    button_connect_4_gd.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
+        match google_drive_sync::initialize() {
+            Ok(t) => {
+                let token = t.access_token;
+                match env::var("CAMPAIGN_PATH") {
+                    Ok(path) => add_gd_campaign(&app, &path, &token, "Google Drive"),
+                    Err(_) => create_error_dialog(&app, "Select a location for the image folder")
+                };
+                
+                window.destroy();
+            },
+            Err(error) => {
+                let msg = format!("Could not add campaign: {}", error.to_string());
+                create_error_dialog(&app, &msg.as_str());
+                select_campaign_window(&app)
+            }
+        }
+    }));
+    button_previous_4_gd.connect_clicked(glib::clone!(@strong stack => move |_| {
+        stack.set_visible_child(&page_3)
+    }));
+
+
+    window.present();
+
+}
 
 
 // Checks for valid name
@@ -183,266 +448,6 @@ fn valid_name(name: &str) -> Result<(), Error> {
 
     Ok(())
 }
-
-
-
-// The 'add campaign sync option' window
-fn add_campaign_page_2(app: &adw::Application) {
-    let label = Label::builder()
-       .label("Choose synchronization service")
-       .margin_top(6)
-       .margin_bottom(6)
-       .build();
-    let button_previous = Button::builder()
-       .label("Back")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let button_next = Button::builder()
-       .label("Next")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let button_cancel = Button::builder()
-       .label("Cancel")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let dropdown_2 = DropDown::from_strings(&SYNCHRONIZATION_OPTIONS);
-
-    let page_2 = Grid::new();
-    page_2.attach(&label, 2, 1, 1, 1);
-    page_2.attach(&button_previous, 2, 3, 1, 1);
-    page_2.attach(&button_next, 3, 3, 1, 1);
-    page_2.attach(&button_cancel, 1, 3, 1, 1);
-    page_2.attach(&dropdown_2, 2, 2, 1, 1);
-
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Add Campaign")
-        .child(&page_2)
-        .resizable(false)
-        .build();
-
-    button_previous.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        add_campaign_page_1(&app);
-        window.destroy();
-    }));
-    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        select_campaign_window(&app)
-    }));
-    button_next.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
-        match dropdown_2.selected(){
-            0 => {
-                window.destroy();
-                add_campaign_page_none(&app);
-            },
-            _ => {
-                window.close();
-                add_campaign_page_gd(&app);
-            },
-        }
-    }));
-
-    window.present();
-}
-
-
-
-
-
-
-// The 'add campaign' window for sync option none
-fn add_campaign_page_none(app: &adw::Application) {
-    match env::current_dir().unwrap().to_str() {
-        Some(path) => env::set_var("CAMPAIGN_PATH", path),
-        None => env::set_var("CAMPAIGN_PATH", ""),
-    }
-
-    let label = Label::builder()
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    match env::var("CAMPAIGN_PATH") {
-        Ok(path) => label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", &path).as_str()),
-        Err(_) => label.set_text("Choose location of image folder"),
-    }
-    let button_default = Button::builder()
-       .label("Use Default")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();    
-    let button_choose = Button::builder()
-       .label("Choose Location")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let button_previous = Button::builder()
-       .label("Back")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let button_finish = Button::builder()
-       .label("Finish")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let button_cancel = Button::builder()
-       .label("Cancel")
-       .margin_top(6)
-       .margin_bottom(6)
-       .margin_start(6)
-       .margin_end(6)
-       .build();
-    let page_none = Grid::new();
-    page_none.attach(&label, 1, 1, 3, 1);
-    page_none.attach(&button_previous, 2, 3, 1, 1);
-    page_none.attach(&button_cancel, 1, 3, 1, 1);
-    page_none.attach(&button_default, 3, 2, 1, 1);
-    page_none.attach(&button_choose, 2, 2, 1, 1);
-    page_none.attach(&button_finish, 3, 3, 1, 1);
-
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Add Campaign")
-        .child(&page_none)
-        .resizable(false)
-        .build();
-
-
-    let file_chooser = FileChooserNative::new(
-        Some("Choose location of image folder"),
-        Some(&window),
-        gtk::FileChooserAction::SelectFolder,
-        Some("Select"),
-        Some("Cancel")
-    );
-
-    file_chooser.connect_response(glib::clone!(@strong label => move |file_chooser, response| {
-        match response {
-            gtk::ResponseType::Accept => {
-                match file_chooser.file() {
-                    Some(f) => {
-                        label.set_text(format!("Choose location of the image folder.\nCurrent location: {}", f.path().unwrap().to_str().unwrap()).as_str());
-                        env::set_var("CAMPAIGN_PATH", f.path().unwrap().to_str().unwrap())
-                    },
-                    None => {}
-                }
-            },
-            _ => {}
-        }
-    }));
-
-    button_choose.connect_clicked(glib::clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
-    button_default.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        match env::current_dir().unwrap().to_str() {
-            Some(path) => add_none_campaign(&app, path, "None"),
-            None => create_error_dialog(&app, "could not find the default directory"),
-        }
-        window.destroy();
-    }));
-    button_previous.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        add_campaign_page_2(&app);
-        window.destroy();
-    }));
-    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        select_campaign_window(&app)
-    }));
-    button_finish.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        match env::var("CAMPAIGN_PATH") {
-            Ok(path) => add_none_campaign(&app, &path, "None"),
-            Err(_) => create_error_dialog(&app, "Select a location for the image folder")
-        };
-        window.destroy();
-    }));
-
-
-    window.present();
-}
-
-
-
-
-
-
-
-// The 'add campaign' window for sync option google drive
-fn add_campaign_page_gd(app: &adw::Application) {
-    let page_gd = Grid::new();
-    let label = Label::builder()
-        .label("In order to use the google drive synchronization service\n
-        you need to give dragon display permission to connect to your google account.")
-        .margin_top(6)
-        .margin_bottom(6)
-        .build();
-    let button_connect = Button::builder()
-        .label("connect")
-        .margin_bottom(6)
-        .margin_end(6)
-        .margin_start(6)
-        .margin_top(6)
-        .build();
-    let button_cancel = Button::builder()
-        .label("cancel")
-        .margin_bottom(6)
-        .margin_end(6)
-        .margin_start(6)
-        .margin_top(6)
-        .build();
-    
-    page_gd.attach(&label, 0, 0, 2, 1);
-    page_gd.attach(&button_connect, 0, 1, 1, 1);
-    page_gd.attach(&button_cancel, 1, 1, 1, 1);
-    
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Add Campaign")
-        .child(&page_gd)
-        .build();
-    
-    button_cancel.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        select_campaign_window(&app)
-    }));
-    
-    button_connect.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
-        match google_drive_sync::initialize() {
-            Ok(t) => {
-                let token = t.access_token;
-                env::set_var("GOOGLE_DRIVE_ACCESS_TOKEN", &token);
-                add_gd_campaign(&app, &token, "Google Drive");
-                window.destroy();
-            },
-            Err(error) => {
-                let msg = format!("Could not add campaign: {}", error.to_string());
-                create_error_dialog(&app, &msg.as_str());
-                select_campaign_window(&app)
-            }
-        }
-    }));
-    
-    window.present();
-}
-
-
 
 
 

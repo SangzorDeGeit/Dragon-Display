@@ -17,7 +17,7 @@ struct Config {
 #[derive(Serialize, Deserialize)]
 pub struct CampaignData {
     pub sync_option : String,
-    pub path : Option<String>,
+    pub path : String,
     pub access_token : Option<String>
 }
 
