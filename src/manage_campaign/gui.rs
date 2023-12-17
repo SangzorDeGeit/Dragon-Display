@@ -12,9 +12,12 @@ use crate::run_program;
 use crate::manage_campaign::{config::read_campaign_from_config, add_gd_campaign, add_none_campaign, remove_campaign};
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
+pub const MAX_CAMPAIGN_AMOUNT: u16 = 2;
 
 const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
+const CAMPAIGN_NAME: &str = "CAMPAIGN_NAME";
+const CAMPAIGN_PATH: &str = "CAMPAIGN_PATH";
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application){
@@ -24,11 +27,14 @@ pub fn select_campaign_window(app: &adw::Application){
 
     let campaign_list = read_campaign_from_config();
 
+    let mut max_campaigns_reached: bool = false;
     let label = Label::builder()
         .margin_top(6)
         .margin_bottom(6)
         .margin_start(6)
         .margin_end(6)
+        .wrap(true)
+        .max_width_chars(40)
         .build();
     let button_add = Button::builder()
         .label("add campaign")
@@ -47,7 +53,7 @@ pub fn select_campaign_window(app: &adw::Application){
 
     let container = Grid::new();
     match campaign_list {
-        Some(list) => {
+        Ok(list) => {
             label.set_text("Select a campaign");
             let mut i = 0;
             container.attach(&button_remove, i, 2, 1, 1);
@@ -68,10 +74,17 @@ pub fn select_campaign_window(app: &adw::Application){
             } else {
                 container.attach(&label, (i/2)+1, 0, 1, 1);
             }
+            if i >= i32::from(MAX_CAMPAIGN_AMOUNT) {max_campaigns_reached = true}
             container.attach(&button_add, i+1, 2, 1, 1);
         }
-        None => {
-            label.set_text("You do not have any campaigns yet");
+        Err(e) => {
+            match e.kind() {
+                ErrorKind::NotFound => label.set_text("You do not have any campaigns yet"),
+                ErrorKind::InvalidInput => label.set_text("An inalid operation was used, something wrong in source code"),
+                ErrorKind::OutOfMemory => label.set_text(format!("You cannot have more then {} campaigns, please delete .config.toml file and restart the program (this file is a hidden file in the directory of this program", MAX_CAMPAIGN_AMOUNT).as_str()),
+                _ => label.set_text("The '.config.toml' file most likely got corrupted. Please delete this file and restart the program (this file is a hidden file in the directory of this program)"),
+            }
+            
             container.attach(&label, 0, 0, 1, 1);
             container.attach(&button_add, 0, 1, 1, 1);
         }
@@ -87,8 +100,14 @@ pub fn select_campaign_window(app: &adw::Application){
     
 
     button_add.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        add_campaign_window(&app);
+        if max_campaigns_reached{
+            create_error_dialog(&app, format!("You can only have {} campaigns at a time", MAX_CAMPAIGN_AMOUNT).as_str())
+        }
+        else {
+            window.destroy();
+            add_campaign_window(&app);
+        }
+
     }));
 
     button_remove.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
@@ -101,10 +120,13 @@ pub fn select_campaign_window(app: &adw::Application){
 
 
 
+
+
 fn add_campaign_window(app: &adw::Application) {
     //The stack contains the different pages to setup a new campaign
     let stack = Stack::new();
-    
+    stack.set_transition_type(gtk::StackTransitionType::SlideLeftRight);
+
     //create the window
     let window = ApplicationWindow::builder()
         .application(app)
@@ -138,7 +160,7 @@ fn add_campaign_window(app: &adw::Application) {
         .margin_end(6)
         .build();
     let entry_1 = Entry::new();
-    match env::var("CAMPAIGN_NAME"){
+    match env::var(CAMPAIGN_NAME){
         Ok(name) => entry_1.set_text(&name),
         Err(_) => entry_1.set_text(""),
     }
@@ -151,7 +173,6 @@ fn add_campaign_window(app: &adw::Application) {
     page_1.attach(&button_cancel, 1, 3, 1, 1);
     page_1.set_halign(gtk::Align::Center);
     page_1.set_valign(gtk::Align::Center);
-
 
 
     //initialize widgets for page 2
@@ -189,8 +210,8 @@ fn add_campaign_window(app: &adw::Application) {
 
     // initalize widgets for page 3
     match env::current_dir().unwrap().to_str() {
-        Some(path) => env::set_var("CAMPAIGN_PATH", path),
-        None => env::set_var("CAMPAIGN_PATH", ""),
+        Some(path) => env::set_var(CAMPAIGN_PATH, path),
+        None => env::set_var(CAMPAIGN_PATH, ""),
     }
     let label_3 = Label::builder()
         .margin_top(6)
@@ -199,7 +220,7 @@ fn add_campaign_window(app: &adw::Application) {
         .margin_end(6)
         .wrap(true)
         .build();
-        match env::var("CAMPAIGN_PATH") {
+        match env::var(CAMPAIGN_PATH) {
             Ok(path) => label_3.set_text(format!("Choose location of the image folder, this the folder where all the images to be displayed by the program are stored. Current location: {}", &path).as_str()),
             Err(_) => label_3.set_text("Choose location of image folder, this the folder where all the images to be displayed by the program are stored."),
         }
@@ -310,7 +331,7 @@ fn add_campaign_window(app: &adw::Application) {
         let input = String::from(entry_1.text().as_str());
         match valid_name(&input) {
             Ok(_) => {
-                env::set_var("CAMPAIGN_NAME", input.as_str());
+                env::set_var(CAMPAIGN_NAME, input.as_str().trim());
                 stack.set_visible_child(&page_2)
             }
             Err(error) => {
@@ -348,8 +369,8 @@ fn add_campaign_window(app: &adw::Application) {
             gtk::ResponseType::Accept => {
                 match file_chooser.file() {
                     Some(f) => {
-                        label_3.set_text(format!("Choose location of the image folder. Current location: {}", f.path().unwrap().to_str().unwrap()).as_str());
-                        env::set_var("CAMPAIGN_PATH", f.path().unwrap().to_str().unwrap())
+                        label_3.set_text(format!("Choose location of the image folder, use default will create a new dedicated folder in the current directory. Current location: {}", f.path().unwrap().to_str().unwrap()).as_str());
+                        env::set_var(CAMPAIGN_PATH, f.path().unwrap().to_str().unwrap())
                     },
                     None => {}
                 }
@@ -358,17 +379,29 @@ fn add_campaign_window(app: &adw::Application) {
         }
     }));
     button_choose_3.connect_clicked(glib::clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
+
     button_default_3.connect_clicked(glib::clone!(@strong app, @strong window, @strong stack, @strong dropdown_2, @strong page_4_gd => move |_| {
         match env::current_dir().unwrap().to_str() {
             Some(path) => {
-                env::set_var("CAMPAIGN_PATH", path);
+                match env::var(CAMPAIGN_NAME) {
+                    Ok(name) => {
+                        let completepath = path.to_string()+"/"+&name;
+                        println!("path: {}", completepath);
+                        env::set_var(CAMPAIGN_PATH, &completepath)
+
+                    },
+                    Err(_) => create_error_dialog(&app, "Could not find campaign name to create folder")
+
+                }
+                //push the name of the campaign to the path
+                
                 label_3.set_text(format!("Choose location of the image folder. Current location: {}", path).as_str());
             },
             None => create_error_dialog(&app, "could not find the default directory"),
         }
         match dropdown_2.selected(){
             0 => {
-                match env::var("CAMPAIGN_PATH") {
+                match env::var(CAMPAIGN_PATH) {
                     Ok(path) => {
                         add_none_campaign(&app, &path, "None");
                         window.destroy();
@@ -379,22 +412,32 @@ fn add_campaign_window(app: &adw::Application) {
             _ => stack.set_visible_child(&page_4_gd),
         }
     }));
+
     button_previous_3.connect_clicked(glib::clone!(@strong stack, @strong page_2 =>move |_| {
         stack.set_visible_child(&page_2)
     }));
+
     button_next_3.connect_clicked(glib::clone!(@strong app, @strong window, @strong stack => move |_| {
-        match dropdown_2.selected(){
-            0 => {
-                match env::var("CAMPAIGN_PATH") {
-                    Ok(path) => add_none_campaign(&app, &path, "None"),
-                    Err(_) => create_error_dialog(&app, "Select a location for the image folder")
-                };
-                window.destroy();
-            },
-            _ => {
-                stack.set_visible_child(&page_4_gd)
-            },
-        }
+        match env::var(CAMPAIGN_PATH) {
+            Ok(path) => {
+                match valid_folder(&path){
+                    Ok(_) => {
+                        match dropdown_2.selected(){
+                            0 => {
+                                add_none_campaign(&app, &path, "None");
+                                window.destroy();
+                            },
+                            _ => {
+                                stack.set_visible_child(&page_4_gd)
+                            },
+                       } 
+                    },
+                    Err(_) => create_error_dialog(&app, "This location is already used by another campaign")
+                }  
+            }
+            Err(_) => create_error_dialog(&app, "Select a location for the image folder")
+        };
+       
     }));
 
 
@@ -405,7 +448,7 @@ fn add_campaign_window(app: &adw::Application) {
         match google_drive_sync::initialize() {
             Ok(t) => {
                 let token = t.access_token;
-                match env::var("CAMPAIGN_PATH") {
+                match env::var(CAMPAIGN_PATH) {
                     Ok(path) => add_gd_campaign(&app, &path, &token, "Google Drive"),
                     Err(_) => create_error_dialog(&app, "Select a location for the image folder")
                 };
@@ -436,12 +479,12 @@ fn valid_name(name: &str) -> Result<(), Error> {
     }
 
     let campaign_list = match read_campaign_from_config() {
-        Some(c) => c,
-        None => return Ok(())
+        Ok(c) => c,
+        Err(_) => return Ok(())
     };
 
     for campaign in campaign_list {
-        if campaign.0 == name {
+        if campaign.0 == name.trim() {
             return Err(Error::from(ErrorKind::AlreadyExists))
         }
     }
@@ -449,6 +492,18 @@ fn valid_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
+
+
+fn valid_folder(path: &str) -> Result<(), Error> {
+    let campaign_list = read_campaign_from_config()?;
+    for campaign in campaign_list {
+        if campaign.1.path == path {
+            return Err(Error::from(ErrorKind::AlreadyExists))
+        }
+    }
+
+    Ok(())
+}
 
 
 // The 'remove campaign' window
@@ -479,7 +534,7 @@ fn remove_campaign_window(app: &adw::Application){
 
     let container = Grid::new();
     match campaign_list {
-        Some(list) => {
+        Ok(list) => {
             let mut i = 0;
             for campaign in list {
                 let campaign_button = Button::builder()
@@ -516,7 +571,7 @@ fn remove_campaign_window(app: &adw::Application){
                 container.attach(&button_cancel, i/2, 2, 2, 1);
             }
         }
-        None => {
+        Err(_) => {
             create_error_dialog(app, "There are no campaigns to remove!");
         }
     }

@@ -9,6 +9,7 @@ use gui::{create_error_dialog, select_campaign_window};
 
 //TODO: MAKE FOLLOWING TWO FUNCTIONS INTO ONE FUNCTION, CURRENTLY TWO DIFFERENT FUNCTIONS SINCE NOT SURE WHAT GOOGLE DRIVE NEEDS
 pub fn add_gd_campaign(app: &adw::Application, path: &str, access_token: &str, sync_option: &str) {
+    //try to make the folder given by 'path', if it exists, continue
     let campaign_values = CampaignData {
         sync_option: sync_option.to_string(),
         path : path.to_string(),
@@ -20,6 +21,7 @@ pub fn add_gd_campaign(app: &adw::Application, path: &str, access_token: &str, s
 
 
 pub fn add_none_campaign(app: &adw::Application, path: &str, sync_option: &str) {
+     //try to make the folder given by 'path', if it exists, continue
     let campaign_values = CampaignData {
         sync_option: sync_option.to_string(),
         path : path.to_string(),

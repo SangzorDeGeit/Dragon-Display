@@ -4,6 +4,8 @@ use toml::to_string;
 use std::env;
 use std::collections::HashMap;
 
+use crate::manage_campaign::gui::MAX_CAMPAIGN_AMOUNT;
+
 const CONFIG_OPERATION_READ : u8 = 0;
 const CONFIG_OPERATION_APPEND : u8 = 1;
 const CONFIG_OPERATION_WRITE : u8 = 2;
@@ -29,14 +31,17 @@ pub fn read_campaign_from_config() -> Result<HashMap<String, CampaignData>, Erro
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Ok(_) => {},
-        Err(_) => return None
+        Err(_) => return Err(Error::from(ErrorKind::Unsupported))
     };
 
     let config: Config = match toml::from_str(&contents) {
         Ok(d) => d,
-        Err(_) => return None
+        Err(_) => return Err(Error::from(ErrorKind::InvalidData))
     };
-    return Some(config.campaigns);
+
+    check_integrity(&config)?;
+
+    return Ok(config.campaigns);
 }
 
 
@@ -114,5 +119,23 @@ fn remove_campaign_config() -> Result<(), io::Error> {
     let mut path = env::current_dir()?;
     path.push(".config.toml");
     fs::remove_file(&path)?;
+    Ok(())
+}
+
+
+fn check_integrity(config: &Config) -> Result<(), io::Error> {
+    if config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT) {
+        return Err(Error::from(ErrorKind::OutOfMemory))
+    }
+
+    let mut checker = Vec::new();
+    for campaign in config.campaigns.values(){
+        if checker.contains(&campaign.path.as_str()) {
+            return Err(Error::from(ErrorKind::InvalidData))
+        }
+        else {
+            checker.push(&campaign.path)
+        }
+    }
     Ok(())
 }
