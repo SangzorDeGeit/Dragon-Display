@@ -1,14 +1,19 @@
 //GUI crates
 use gtk::prelude::*;
 use gtk::glib;
+
+//core crates
 use tokio;
 
 //imported modules
 pub mod google_drive_sync;
 pub mod manage_campaign;
+pub mod screen_selection;
 
 use manage_campaign::gui::select_campaign_window;
 use manage_campaign::config::CampaignData;
+
+use screen_selection::select_screen_window;
 
 
 
@@ -23,25 +28,10 @@ async fn main()-> glib::ExitCode {
     app.run()
 }
 
-fn run_program(campaign: &(String, CampaignData)) {
-    println!("Now we run!")
+
+
+fn run_program(campaign: &(String, CampaignData), app: &adw::Application) {
+    select_screen_window(&app);
 }
 
-fn open_window() {
-    let display = gdk4::Display::default();
-    match display {
-        Some(d) => {
-            let monitor = d.monitors().item(1);
-            match monitor {
-                Some(m) => {
-                    let mon = m.to_value().get::<gdk4::Monitor>().expect("The value needs to be monitor!");
-                    // window.fullscreen_on_monitor(&mon);
-                },
-                None => {}
-            }
-            
-        },
-        None => {}
-    }
-}
 

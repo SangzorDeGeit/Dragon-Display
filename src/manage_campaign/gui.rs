@@ -90,7 +90,7 @@ pub fn select_campaign_window(app: &adw::Application){
                     match create_dir_all(&campaign.1.path) {
                         Ok(_) => {
                             window.destroy();
-                            run_program(&campaign);
+                            run_program(&campaign, &app);
                         },
                         Err(e) => {
                             match e.kind() {
