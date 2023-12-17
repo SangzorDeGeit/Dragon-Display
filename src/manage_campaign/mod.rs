@@ -1,11 +1,14 @@
 pub mod gui;
 pub mod config;
 
-use std::env;
+use std::{env, fs, io, io::{Error, ErrorKind}};
 use std::collections::HashMap;
 
 use config::{CampaignData, write_campaign_to_config, remove_campaign_from_config};
 use gui::{create_error_dialog, select_campaign_window};
+
+
+const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
 
 //TODO: MAKE FOLLOWING TWO FUNCTIONS INTO ONE FUNCTION, CURRENTLY TWO DIFFERENT FUNCTIONS SINCE NOT SURE WHAT GOOGLE DRIVE NEEDS
 pub fn add_gd_campaign(app: &adw::Application, path: &str, access_token: &str, sync_option: &str) {
@@ -63,7 +66,17 @@ fn add_campaign(app: &adw::Application, campaign_values: CampaignData){
 
 // This function is called by the gui modules to remove given campaign
 // TODO: any envirnoment variables for sync services should be removed
-pub fn remove_campaign(app: &adw::Application, campaign_name: &str) {
+pub fn remove_campaign(app: &adw::Application, campaign_name: &str, campaign_path: &str) {
+    match check_save_removal(&campaign_path) {
+        Ok(_) => {
+            match fs::remove_dir_all(&campaign_path) {
+                Ok(_) => {},
+                Err(_) => create_error_dialog(&app, "could not delete the campaign image folder")
+            }
+        },
+        Err(_) => create_error_dialog(&app, "Did not remove the campaign image folder since non-image files were found in this directory")
+    }
+
     match remove_campaign_from_config(campaign_name) {
         Ok(_) => select_campaign_window(app),
         Err(error) => {
@@ -72,4 +85,25 @@ pub fn remove_campaign(app: &adw::Application, campaign_name: &str) {
             select_campaign_window(app)
         }
     }
+}
+
+fn check_save_removal(campaign_path: &str) -> Result<(), io::Error> {
+    let files = fs::read_dir(&campaign_path)?;
+    for file in files {
+        let file = file?;
+        match file.path().extension() {
+            Some(extension) => {
+                match extension.to_str() {
+                    Some(ext) => {
+                        if !IMAGE_EXTENSIONS.contains(&ext) {
+                            return Err(Error::from(ErrorKind::WouldBlock))
+                        }
+                    },
+                    None => return Err(Error::from(ErrorKind::NotFound))
+                }
+            }
+            None => return Err(Error::from(ErrorKind::NotFound))
+        }
+    }
+    Ok(())
 }

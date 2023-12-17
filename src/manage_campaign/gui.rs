@@ -4,6 +4,7 @@ use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Di
 use adw::prelude::*;
 
 use std::env;
+use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
 
 
@@ -19,6 +20,19 @@ const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 const CAMPAIGN_NAME: &str = "CAMPAIGN_NAME";
 const CAMPAIGN_PATH: &str = "CAMPAIGN_PATH";
 
+const ALLOWED_CHARS: [char; 65] = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 
+    'h', 'i', 'j', 'k', 'l', 'm', 'n', 
+    'o', 'p', 'q', 'r', 's', 't', 'u', 
+    'v', 'w', 'x', 'y', 'z', 'A', 'B', 
+    'C', 'D', 'E', 'F', 'G', 'H', 'I', 
+    'J', 'K', 'L', 'M', 'N', 'O', 'P', 
+    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 
+    'X', 'Y', 'Z', '0', '1', '2', '3', 
+    '4', '5', '6', '7', '8', '9', '-', 
+    '\'', ' '
+];
+
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application){
 
@@ -26,6 +40,13 @@ pub fn select_campaign_window(app: &adw::Application){
     // let settings = Settings::new(APP_ID);
 
     let campaign_list = read_campaign_from_config();
+
+    let container = Grid::new();
+    let window = ApplicationWindow::builder()
+    .application(app)
+    .title("Dragon-Display")
+    .child(&container)
+    .build();
 
     let mut max_campaigns_reached: bool = false;
     let label = Label::builder()
@@ -51,7 +72,6 @@ pub fn select_campaign_window(app: &adw::Application){
         .margin_end(6)
         .build();
 
-    let container = Grid::new();
     match campaign_list {
         Ok(list) => {
             label.set_text("Select a campaign");
@@ -66,7 +86,20 @@ pub fn select_campaign_window(app: &adw::Application){
                     .margin_start(6)
                     .margin_end(6)
                     .build();
-                campaign_button.connect_clicked(move |_| run_program(&campaign));
+                campaign_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
+                    match create_dir_all(&campaign.1.path) {
+                        Ok(_) => {
+                            window.destroy();
+                            run_program(&campaign);
+                        },
+                        Err(e) => {
+                            match e.kind() {
+                                ErrorKind::PermissionDenied => create_error_dialog(&app, "Could not create image folder, permission denied"),
+                                _ => create_error_dialog(&app, "could not start program")
+                            }
+                        } 
+                    }
+                }));
                 container.attach(&campaign_button, i, 1, 1, 1)
             }
             if i%2 == 0 {
@@ -91,12 +124,6 @@ pub fn select_campaign_window(app: &adw::Application){
     }
     container.set_halign(gtk::Align::Center);
     container.set_valign(gtk::Align::Center);
-
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Dragon-Display")
-        .child(&container)
-        .build();
     
 
     button_add.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
@@ -472,11 +499,23 @@ fn add_campaign_window(app: &adw::Application) {
 }
 
 
+
+
+
+
 // Checks for valid name
 fn valid_name(name: &str) -> Result<(), Error> {
-    if name.chars().all(char::is_whitespace) {
+    let trimmed_name = name.trim();
+
+    if trimmed_name.chars().all(char::is_whitespace) {
         return Err(Error::from(ErrorKind::InvalidInput))
     }
+
+    if !trimmed_name.chars().all(|x| ALLOWED_CHARS.contains(&x)) {
+        println!("not valid name");
+        return Err(Error::from(ErrorKind::InvalidInput))
+    }
+    println!("valid name");
 
     let campaign_list = match read_campaign_from_config() {
         Ok(c) => c,
@@ -484,13 +523,16 @@ fn valid_name(name: &str) -> Result<(), Error> {
     };
 
     for campaign in campaign_list {
-        if campaign.0 == name.trim() {
+        if campaign.0 == trimmed_name {
             return Err(Error::from(ErrorKind::AlreadyExists))
         }
     }
 
     Ok(())
 }
+
+
+
 
 
 
@@ -504,6 +546,10 @@ fn valid_folder(path: &str) -> Result<(), Error> {
 
     Ok(())
 }
+
+
+
+
 
 
 // The 'remove campaign' window
@@ -545,13 +591,14 @@ fn remove_campaign_window(app: &adw::Application){
                     .margin_end(6)
                     .build();
                 let campaign_name = campaign.0.clone();
-                campaign_button.connect_clicked(glib::clone!(@strong app, @strong window, @strong campaign_name =>move |_| {
+                let campaign_path = campaign.1.path.clone();
+                campaign_button.connect_clicked(glib::clone!(@strong app, @strong window, @strong campaign_name, @strong campaign_path =>move |_| {
                     let confirm_window = remove_campaign_window_confirm(&window, campaign_name.as_str());
                     confirm_window.present();
-                    confirm_window.connect_response(glib::clone!(@strong app, @strong confirm_window, @strong campaign_name, @strong window => move |_, response| {
+                    confirm_window.connect_response(glib::clone!(@strong app, @strong confirm_window, @strong campaign_name, @strong campaign_path, @strong window => move |_, response| {
                         match response {
                             ResponseType::Yes => {
-                                remove_campaign(&app, campaign_name.as_str());
+                                remove_campaign(&app, campaign_name.as_str(), campaign_path.as_str());
                                 confirm_window.destroy();
                                 window.destroy()
                             },

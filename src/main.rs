@@ -23,8 +23,8 @@ async fn main()-> glib::ExitCode {
     app.run()
 }
 
-fn run_program(campaign: &(String, CampaignData)){
-    todo!()
+fn run_program(campaign: &(String, CampaignData)) {
+    println!("Now we run!")
 }
 
 fn open_window() {
