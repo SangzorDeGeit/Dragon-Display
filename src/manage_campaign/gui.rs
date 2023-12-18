@@ -9,7 +9,7 @@ use std::io::{Error, ErrorKind};
 
 
 use crate::google_drive_sync;
-use crate::run_program;
+use crate::dragon_display::gui::select_screen_window;
 use crate::manage_campaign::{config::read_campaign_from_config, add_gd_campaign, add_none_campaign, remove_campaign};
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
@@ -90,7 +90,7 @@ pub fn select_campaign_window(app: &adw::Application){
                     match create_dir_all(&campaign.1.path) {
                         Ok(_) => {
                             window.destroy();
-                            run_program(&campaign, &app);
+                            select_screen_window(&app, &campaign);
                         },
                         Err(e) => {
                             match e.kind() {
