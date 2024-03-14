@@ -20,7 +20,8 @@ struct Config {
 pub struct CampaignData {
     pub sync_option : String,
     pub path : String,
-    pub access_token : Option<String>
+    pub access_token : Option<String>,
+    pub refresh_token : Option<String>
 }
 
 
@@ -41,7 +42,7 @@ pub fn read_campaign_from_config() -> Result<HashMap<String, CampaignData>, Erro
 
     check_integrity(&config)?;
 
-    return Ok(config.campaigns);
+    Ok(config.campaigns)
 }
 
 
@@ -93,21 +94,21 @@ fn get_campaign_config(operation: u8) -> Result<File, io::Error>{
             let file = OpenOptions::new()
                 .read(true)
                 .open(&path)?;
-            return Ok(file)
+            Ok(file)
         },
         CONFIG_OPERATION_WRITE => {
             let file = OpenOptions::new()
                 .write(true)
                 .truncate(true)
                 .open(&path)?;
-            return Ok(file)
+            Ok(file)
         },
         CONFIG_OPERATION_APPEND => {
             let file = OpenOptions::new()
                 .append(true)
                 .create(true)
                 .open(&path)?;
-            return Ok(file)
+            Ok(file)
         },
         _ => Err(Error::from(ErrorKind::InvalidInput))
     }
@@ -124,18 +125,19 @@ fn remove_campaign_config() -> Result<(), io::Error> {
 
 
 fn check_integrity(config: &Config) -> Result<(), io::Error> {
+    //Check if no campaigns are manually edited via the toml file to exceed the maximum number of campaigns
     if config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT) {
         return Err(Error::from(ErrorKind::OutOfMemory))
     }
 
+    //Check if no two campaigns have the same campaign path
     let mut checker = Vec::new();
     for campaign in config.campaigns.values(){
         if checker.contains(&campaign.path.as_str()) {
             return Err(Error::from(ErrorKind::InvalidData))
         }
-        else {
-            checker.push(&campaign.path)
-        }
+        
+        checker.push(&campaign.path)
     }
     Ok(())
 }

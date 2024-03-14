@@ -1,31 +1,30 @@
-use std::{env,io::{self, Error, ErrorKind}};
+use std::{io::Read, env, fs::OpenOptions, io::{self, Error, ErrorKind}};
 use rouille::{Server, Response};
-use google_drive::{Client, AccessToken};
+use google_drive::{drives::Drives, files::Files, types::Drive, AccessToken, Client};
 use open;
-use futures;
-use tokio::runtime::Handle;
+use futures::executor::block_on;
+use base64::{engine::general_purpose::STANDARD, Engine};
 
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
 
-
 pub fn initialize() -> Result<AccessToken, io::Error> {
-    let mut google_drive_client = Client::new(
-        "1043613452788-ij2c5k1k19jf4rqf8o0fg2hh0t71kvct.apps.googleusercontent.com",
-        "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",
-        "http://localhost:8000/",
-        "",
-        ""
-    );
+    configure_environment()?;
+    //initialize client
+    let mut google_drive_client = block_on(Client::new_from_env("", ""));
 
+    //make a consent url
     let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
-    println!("The consent url: {}", user_consent_url);
 
+    //start the target server for the redirect
     let (_handler, sender) = start_server()?;
     open::that(user_consent_url).expect("could not open page");
 
+    //wait until the state and code vars are set
     while let Err(_) = env::var("DRAGON_DISPLAY_CODE") {}
+
+    //tell the listening server to shut down
     sender.send(()).unwrap();
     
     let code_state = (env::var("DRAGON_DISPLAY_CODE"), env::var("DRAGON_DISPLAY_STATE"));
@@ -33,9 +32,8 @@ pub fn initialize() -> Result<AccessToken, io::Error> {
 
     match code_state {
         (Ok(code), Ok(state)) => {
-            let handle = Handle::current();
-            let _ = handle.enter();
-            let access_token = futures::executor::block_on(async move {google_drive_client.get_access_token(&code, &state).await.unwrap()});
+            //block the curren thread to generate an access token with the async function
+            let access_token = block_on(google_drive_client.get_access_token(&code, &state)).unwrap();
             return Ok(access_token)
         },
         _ => Err(Error::from(ErrorKind::WriteZero)),
@@ -83,3 +81,40 @@ fn set_state_and_code(value: &str) -> Result<(), io::Error>{
     }
 }
 
+fn sync_drive(accesstoken: &str, refresh_token: &str){
+    
+}
+
+/**
+ * Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
+ * A file named client_secret.json needs to be in the directory of the Dragon-Display program
+ */
+fn configure_environment() -> Result<(), io::Error> {
+
+    match env::var("GOOGLE_KEY_ENCODED"){
+        Ok(_) => return Ok(()),
+        Err(_) => (),
+    };
+
+    // Open the file that contains the client secret
+    let mut path = env::current_dir()?;
+    path.push("client_secret.json");
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open(&path)?;
+
+    // read the contents of the file to a string
+    let mut contents = String::new();
+    match file.read_to_string(&mut contents) {
+        Ok(_) => (),
+        Err(_) => return Err(Error::from(ErrorKind::Unsupported))
+    };
+
+    //the variable to add as environment variable (base64 encoded json string)
+    let encoded_client_secret = STANDARD.encode(contents);
+
+    //set the variable as GOOGLE_KEY_ENCODED
+    env::set_var("GOOGLE_KEY_ENCODED", encoded_client_secret);
+    Ok(())
+}

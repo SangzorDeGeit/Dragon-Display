@@ -7,15 +7,13 @@ use std::env;
 use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
 
-
-use crate::google_drive_sync;
-use crate::dragon_display::gui::select_screen_window;
-use crate::manage_campaign::{config::read_campaign_from_config, add_gd_campaign, add_none_campaign, remove_campaign};
+use crate::{main_program::dragon_display_init, google_drive_sync};
+use crate::manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign};
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
-pub const MAX_CAMPAIGN_AMOUNT: u16 = 2;
+pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 
-const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
+pub const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
 const CAMPAIGN_NAME: &str = "CAMPAIGN_NAME";
 const CAMPAIGN_PATH: &str = "CAMPAIGN_PATH";
@@ -72,6 +70,7 @@ pub fn select_campaign_window(app: &adw::Application){
         .margin_end(6)
         .build();
 
+    //To add the campaign buttons    
     match campaign_list {
         Ok(list) => {
             label.set_text("Select a campaign");
@@ -89,8 +88,9 @@ pub fn select_campaign_window(app: &adw::Application){
                 campaign_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
                     match create_dir_all(&campaign.1.path) {
                         Ok(_) => {
+                            //function of the campaign buttons
                             window.destroy();
-                            select_screen_window(&app, &campaign);
+                            dragon_display_init(&app, &campaign); 
                         },
                         Err(e) => {
                             match e.kind() {
@@ -413,7 +413,6 @@ fn add_campaign_window(app: &adw::Application) {
                 match env::var(CAMPAIGN_NAME) {
                     Ok(name) => {
                         let completepath = path.to_string()+"/"+&name;
-                        println!("path: {}", completepath);
                         env::set_var(CAMPAIGN_PATH, &completepath)
 
                     },
@@ -430,7 +429,7 @@ fn add_campaign_window(app: &adw::Application) {
             0 => {
                 match env::var(CAMPAIGN_PATH) {
                     Ok(path) => {
-                        add_none_campaign(&app, &path, "None");
+                        add_campaign(&app, &path, None, None, SYNCHRONIZATION_OPTIONS[0]);
                         window.destroy();
                     },
                     Err(_) => create_error_dialog(&app, "Select a location for the image folder")
@@ -451,7 +450,7 @@ fn add_campaign_window(app: &adw::Application) {
                     Ok(_) => {
                         match dropdown_2.selected(){
                             0 => {
-                                add_none_campaign(&app, &path, "None");
+                                add_campaign(&app, &path, None, None, SYNCHRONIZATION_OPTIONS[0]);
                                 window.destroy();
                             },
                             _ => {
@@ -474,9 +473,10 @@ fn add_campaign_window(app: &adw::Application) {
     button_connect_4_gd.connect_clicked(glib::clone!(@strong window, @strong app => move |_| {
         match google_drive_sync::initialize() {
             Ok(t) => {
-                let token = t.access_token;
+                let access_token = t.access_token;
+                let refresh_token = t.refresh_token;
                 match env::var(CAMPAIGN_PATH) {
-                    Ok(path) => add_gd_campaign(&app, &path, &token, "Google Drive"),
+                    Ok(path) => add_campaign(&app, &path, Some(access_token), Some(refresh_token), SYNCHRONIZATION_OPTIONS[1]),
                     Err(_) => create_error_dialog(&app, "Select a location for the image folder")
                 };
                 
@@ -503,7 +503,7 @@ fn add_campaign_window(app: &adw::Application) {
 
 
 
-// Checks for valid name
+// Checks for valid campaign name
 fn valid_name(name: &str) -> Result<(), Error> {
     let trimmed_name = name.trim();
 

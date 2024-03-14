@@ -1,4 +1,5 @@
 /target
 /campaigns
 .config.toml
+google_drive.json
 

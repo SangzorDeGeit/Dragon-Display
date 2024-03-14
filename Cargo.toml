@@ -11,11 +11,12 @@ serde = { version = "1.0", features = ["derive"] }
 google-drive = "0.7"
 tokio = { version = "1", features = ["full"]}
 serde_json = "1.0"
+base64 = "0.22.0"
 rouille = "3.6.2"
 open = "5.0"
 unicode-segmentation = "1.10.1"
-gtk = { version = "0.7.3", package = "gtk4", features = ["v4_8"] }
-gdk4 = "0.7.3"
-display-info = "0.4.3"
-adw = { version = "0.5.3", package = "libadwaita", features = ["v1_2"] }
+gtk = { version = "0.8.1", package = "gtk4", features = ["v4_8"] }
+gdk4 = "0.8.1"
+display-info = "0.5.0"
+adw = { version = "0.6", package = "libadwaita", features = ["v1_2"] }
 futures = "0.3.29"

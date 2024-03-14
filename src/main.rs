@@ -8,7 +8,8 @@ use tokio;
 //imported modules
 pub mod google_drive_sync;
 pub mod manage_campaign;
-pub mod dragon_display;
+pub mod main_program;
+
 
 use manage_campaign::gui::select_campaign_window;
 

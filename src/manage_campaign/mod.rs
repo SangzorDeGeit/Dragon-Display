@@ -10,35 +10,18 @@ use gui::{create_error_dialog, select_campaign_window};
 
 const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
 
-//TODO: MAKE FOLLOWING TWO FUNCTIONS INTO ONE FUNCTION, CURRENTLY TWO DIFFERENT FUNCTIONS SINCE NOT SURE WHAT GOOGLE DRIVE NEEDS
-pub fn add_gd_campaign(app: &adw::Application, path: &str, access_token: &str, sync_option: &str) {
+/**
+ * Add a campaign and write data to .config.toml
+ */
+pub fn add_campaign(app: &adw::Application, path: &str, access_token: Option<String>, refresh_token: Option<String>, sync_option: &str) {
     //try to make the folder given by 'path', if it exists, continue
     let campaign_values = CampaignData {
         sync_option: sync_option.to_string(),
         path : path.to_string(),
-        access_token: Some(access_token.to_string())
+        access_token: access_token,
+        refresh_token: refresh_token
     };
 
-    add_campaign(&app, campaign_values)
-}
-
-
-pub fn add_none_campaign(app: &adw::Application, path: &str, sync_option: &str) {
-     //try to make the folder given by 'path', if it exists, continue
-    let campaign_values = CampaignData {
-        sync_option: sync_option.to_string(),
-        path : path.to_string(),
-        access_token: None
-    };
-
-    add_campaign(&app, campaign_values)
-
-}
-
-
-
-// This function is called by the gui modules to create the campaign
-fn add_campaign(app: &adw::Application, campaign_values: CampaignData){
     let name = match env::var("CAMPAIGN_NAME") {
         Ok(n) => n,
         Err(_) => {
@@ -47,6 +30,7 @@ fn add_campaign(app: &adw::Application, campaign_values: CampaignData){
             return;
         }    
     };
+
 
     let mut campaign = HashMap::new();
     campaign.insert(name.to_string(), campaign_values);
@@ -58,14 +42,14 @@ fn add_campaign(app: &adw::Application, campaign_values: CampaignData){
             create_error_dialog(app, &msg.as_str());
             select_campaign_window(app)
         }
-    }   
+    } 
 }
 
 
-
-
-// This function is called by the gui modules to remove given campaign
-// TODO: any envirnoment variables for sync services should be removed
+/**
+ * This function is called by the gui modules to remove given campaign
+ * TODO: any envirnoment variables for sync services should be removed -> these are probably not set
+ */ 
 pub fn remove_campaign(app: &adw::Application, campaign_name: &str, campaign_path: &str) {
     match check_save_removal(&campaign_path) {
         Ok(_) => {
@@ -87,23 +71,29 @@ pub fn remove_campaign(app: &adw::Application, campaign_name: &str, campaign_pat
     }
 }
 
+/**
+ * Checks if there are only image files in the image folder of the campaign to be removed
+ */
 fn check_save_removal(campaign_path: &str) -> Result<(), io::Error> {
     let files = fs::read_dir(&campaign_path)?;
     for file in files {
-        let file = file?;
-        match file.path().extension() {
-            Some(extension) => {
-                match extension.to_str() {
-                    Some(ext) => {
-                        if !IMAGE_EXTENSIONS.contains(&ext) {
-                            return Err(Error::from(ErrorKind::WouldBlock))
-                        }
-                    },
-                    None => return Err(Error::from(ErrorKind::NotFound))
-                }
-            }
+        let file_path = file?.path();
+
+        let extension_os = match file_path.extension() {
+            Some(e) => e,
             None => return Err(Error::from(ErrorKind::NotFound))
+        };
+
+        let extension = match extension_os.to_str() {
+            Some(e) => e,
+            None => return Err(Error::from(ErrorKind::NotFound))
+        };
+
+        if !IMAGE_EXTENSIONS.contains(&extension) {
+            return Err(Error::from(ErrorKind::WouldBlock))
         }
+
     }
+        
     Ok(())
 }
