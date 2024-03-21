@@ -6,6 +6,7 @@ use futures::executor::block_on;
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 
+
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
 
@@ -81,10 +82,6 @@ fn set_state_and_code(value: &str) -> Result<(), io::Error>{
     }
 }
 
-fn sync_drive(accesstoken: &str, refresh_token: &str){
-    
-}
-
 /**
  * Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
  * A file named client_secret.json needs to be in the directory of the Dragon-Display program
@@ -117,4 +114,67 @@ fn configure_environment() -> Result<(), io::Error> {
     //set the variable as GOOGLE_KEY_ENCODED
     env::set_var("GOOGLE_KEY_ENCODED", encoded_client_secret);
     Ok(())
+}
+
+/**
+ * Synchronizes images of the target drive
+ */
+pub fn sync_drive(accesstoken: &str, refresh_token: &str){
+    let _ = configure_environment();
+
+    let (accesstoken, refresh_token) = refresh_client(accesstoken, refresh_token);
+
+    let mut google_drive_client = block_on(Client::new_from_env(accesstoken, refresh_token));
+    google_drive_client.set_auto_access_token_refresh(true);
+
+    //query to look for the 'folder' named 'Uclia' on the client drive
+    let query_1 = "name='Uclia' and mimeType = 'application/vnd.google-apps.folder'";
+    let folder = block_on(google_drive_client.files().list_all("", "", false, "", false, "", query_1, "", false, false, ""));
+
+    let response = match folder {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return;
+        }
+    };
+
+    
+    //Loop through all files in the response -> temporary
+    for f in response.body {
+        println!("file name: {}, file id: {}",f.name, f.id);
+        let filter_query = format!("'{}' in parents and not trashed", f.id);
+        let list = block_on(google_drive_client.files().list_all("", "", false, "", false, "", &filter_query, "", false, false, ""));
+
+        let response_2 = match list {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return;
+            }
+        };
+
+        for img in response_2.body {
+            println!("file name: {}", img.name)
+        }
+
+    }   
+    
+}
+
+fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> (String, String) {
+    let google_drive_client = block_on(Client::new_from_env(old_access_token, old_refresh_token));
+    let token = block_on(google_drive_client.refresh_access_token());
+
+    let token = match token {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+    //TODO: The new tokens should be stored in the campaign config file
+    let new_access_token = token.access_token;
+    let new_refresh_token = token.refresh_token;
+    return (new_access_token, new_refresh_token)
 }
