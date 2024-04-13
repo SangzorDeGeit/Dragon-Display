@@ -1,5 +1,5 @@
 /target
 /campaigns
 .config.toml
-google_drive.json
+client_secret.json
 
