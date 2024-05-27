@@ -1,8 +1,8 @@
-use std::{io::Read, env, fs::OpenOptions, io::{self, Error, ErrorKind}};
+use std::{env, fs::OpenOptions, io::{self, Error, ErrorKind, Read}, sync::mpsc::{self, Sender}};
 use rouille::{Server, Response};
 use google_drive::{drives::Drives, files::Files, types::Drive, AccessToken, Client};
 use open;
-use futures::executor::block_on;
+use futures::{channel::oneshot::channel, executor::block_on};
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 
@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
 
-pub fn initialize() -> Result<AccessToken, io::Error> {
+pub fn initialize() -> Result<AccessToken, Error> {
     configure_environment()?;
     //initialize client
     let mut google_drive_client = block_on(Client::new_from_env("", ""));
@@ -18,43 +18,43 @@ pub fn initialize() -> Result<AccessToken, io::Error> {
     //make a consent url
     let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
 
+    let (tx, rx) = mpsc::channel();
+
     //start the target server for the redirect
-    let (_handler, sender) = start_server()?;
-    open::that(user_consent_url).expect("could not open page");
+    let (handler, _sender) = start_server(tx)?;
+    open::that(user_consent_url).expect("Could not open the user consent url");
 
     //wait until the state and code vars are set
-    while let Err(_) = env::var("DRAGON_DISPLAY_CODE") {}
+    let state_and_code = match rx.recv() {
+        Ok(s) => s,
+        Err(_) => return Err(Error::from(ErrorKind::BrokenPipe))
+    }; 
 
     //tell the listening server to shut down
-    sender.send(()).unwrap();
-    
-    let code_state = (env::var("DRAGON_DISPLAY_CODE"), env::var("DRAGON_DISPLAY_STATE"));
+    handler.join().unwrap();
 
 
-    match code_state {
-        (Ok(code), Ok(state)) => {
-            //block the curren thread to generate an access token with the async function
-            let access_token = block_on(google_drive_client.get_access_token(&code, &state)).unwrap();
-            return Ok(access_token)
-        },
-        _ => Err(Error::from(ErrorKind::WriteZero)),
-    }
+    return Ok(block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)).unwrap());
 }
 
 
 
 
-fn start_server() -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>), io::Error> {
+fn start_server(tx: mpsc::Sender<(String, String)>) -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>), io::Error> {
     let server = Server::new("localhost:8000", move |request|{
-        match request.raw_url().to_string().strip_prefix("/?state=") {
-            Some(value) => {
-                match set_state_and_code(value) {
-                    Ok(_) => Response::text("linked succesfully, you can close this page now!"),
-                    Err(_) => Response::text("The state or code given by google was invalid!")
-                }
+        match get_state_and_code(request.raw_url()) {
+            Ok(state_and_code) => {
+                tx.send(state_and_code).unwrap();
+                Response::text("linked succesfully, you can close this page now!")
             },
-            None => Response::text("sssshhhhh! I'm trying to listen!"),
-        }       
+            Err(e) => {
+                match e.kind() {
+                    ErrorKind::AddrInUse => Response::text("sssshhhhh! I'm trying to listen!"),
+                    _ => Response::text("The state or code given by google was invalid!")
+                }
+                
+            }
+        }
     });
 
     match server {
@@ -66,20 +66,25 @@ fn start_server() -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sende
 }
 
 
+/// Extracts the state and code from a google response
+fn get_state_and_code(request: &str) -> Result<(String, String), io::Error>{
+    let request_string = request.to_string();
+    let state_stripped = match request_string.strip_prefix("/?state=") {
+        Some(s) => s,
+        None => return Err(Error::from(ErrorKind::AddrInUse)),
+    };
 
-fn set_state_and_code(value: &str) -> Result<(), io::Error>{
-    match value.to_string().strip_suffix(&format!("&scope={}",&SCOPE)) {
-        Some(state_and_code) => {
-            if let Some(state_code) = state_and_code.rsplit_once("&code=") {
-                env::set_var("DRAGON_DISPLAY_STATE", state_code.0);
-                env::set_var("DRAGON_DISPLAY_CODE", state_code.1);
-                Ok(())
-            } else {
-                return Err(Error::from(ErrorKind::InvalidData))
-            }
-        },
+    let scope_stripped = match state_stripped.strip_suffix(&format!("&scope={}",&SCOPE)) {
+        Some(s) => s,
+        None => return Err(Error::from(ErrorKind::InvalidData)),
+    };
+
+
+    let state_and_code = match scope_stripped.rsplit_once("&code=") {
+        Some(s) => (s.0.to_owned(), s.1.to_owned()),
         None => return Err(Error::from(ErrorKind::InvalidData))
-    }
+    };    
+   return Ok(state_and_code);
 }
 
 /**

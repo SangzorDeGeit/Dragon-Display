@@ -419,8 +419,6 @@ fn add_campaign_window(app: &adw::Application) {
                     Err(_) => create_error_dialog(&app, "Could not find campaign name to create folder")
 
                 }
-                //push the name of the campaign to the path
-                
                 label_3.set_text(format!("Choose location of the image folder. Current location: {}", path).as_str());
             },
             None => create_error_dialog(&app, "could not find the default directory"),
@@ -483,9 +481,18 @@ fn add_campaign_window(app: &adw::Application) {
                 window.destroy();
             },
             Err(error) => {
-                let msg = format!("Could not add campaign: {}", error.to_string());
-                create_error_dialog(&app, &msg.as_str());
-                select_campaign_window(&app)
+                match error.kind() {
+                    ErrorKind::NotFound => {
+                        let msg = format!("Could not synchronize, you are missing a client_secret.json in the Dragon-Display directory");
+                        create_error_dialog(&app, &msg.as_str());
+                        select_campaign_window(&app)
+                    }
+                    _ => {
+                        let msg = format!("Could not add campaign: {}", error.to_string());
+                        create_error_dialog(&app, &msg.as_str());
+                        select_campaign_window(&app)
+                    }
+                }
             }
         }
     }));
