@@ -8,10 +8,8 @@ use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
 
 use crate::{main_program::dragon_display_init, google_drive_sync};
-use crate::manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign};
+use crate::manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH};
 
-const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
-pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 
 pub const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
