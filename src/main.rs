@@ -6,12 +6,11 @@ use gtk::glib;
 use tokio;
 
 //imported modules
-pub mod google_drive_sync;
-pub mod manage_campaign;
-pub mod main_program;
+pub mod dragon_display;
+pub mod widgets;
 
 
-use manage_campaign::gui::select_campaign_window;
+use dragon_display::program;
 
 
 pub const APP_ID: &str = "Dragon-Display";
@@ -20,7 +19,7 @@ pub const APP_ID: &str = "Dragon-Display";
 async fn main()-> glib::ExitCode {
     let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
 
-    app.connect_activate(select_campaign_window);
+    app.connect_activate(program);
     
     app.run()
 }

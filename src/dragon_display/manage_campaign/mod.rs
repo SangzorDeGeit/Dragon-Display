@@ -4,13 +4,14 @@ pub mod config;
 use std::{env, fs, io, io::{Error, ErrorKind}};
 use std::collections::HashMap;
 
-use config::{CampaignData, write_campaign_to_config, remove_campaign_from_config};
+use config::{Campaign, write_campaign_to_config, remove_campaign_from_config};
 use gui::{create_error_dialog, select_campaign_window};
 
 const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 
 const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
+pub const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
 
 /**
  * Add a campaign and write data to .config.toml

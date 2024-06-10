@@ -7,11 +7,10 @@ use std::env;
 use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
 
-use crate::{main_program::dragon_display_init, google_drive_sync};
-use crate::manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH};
-
-
-pub const SYNCHRONIZATION_OPTIONS : [&str; 2] = ["None", "Google Drive"];
+use crate::dragon_display::{dragon_display_init, 
+                            manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}, 
+                            google_drive_sync};
+use crate::widgets::campaign_button::{self, CampaignButton};
 
 const CAMPAIGN_NAME: &str = "CAMPAIGN_NAME";
 const CAMPAIGN_PATH: &str = "CAMPAIGN_PATH";
@@ -68,6 +67,14 @@ pub fn select_campaign_window(app: &adw::Application){
         .margin_end(6)
         .build();
 
+    match campaign_list {
+        Ok(list) => {
+            for campaign in list (
+                let button = CampaignButton::new().set_cam
+            )
+        },
+        Err(_) => (),
+    }
     //To add the campaign buttons    
     match campaign_list {
         Ok(list) => {

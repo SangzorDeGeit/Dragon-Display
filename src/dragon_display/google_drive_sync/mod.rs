@@ -1,14 +1,16 @@
-use std::{env, fs::OpenOptions, io::{self, Error, ErrorKind, Read}, sync::mpsc::{self, Sender}};
-use rouille::{Server, Response};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use futures::{channel::oneshot::channel, executor::block_on};
 use google_drive::{drives::Drives, files::Files, types::Drive, AccessToken, Client};
 use open;
-use futures::{channel::oneshot::channel, executor::block_on};
-use base64::{engine::general_purpose::STANDARD, Engine};
-
-
+use rouille::{Response, Server};
+use std::{
+    env,
+    fs::OpenOptions,
+    io::{self, Error, ErrorKind, Read},
+    sync::mpsc::{self, Sender},
+};
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
-
 
 pub fn initialize() -> Result<AccessToken, Error> {
     configure_environment()?;
@@ -21,70 +23,69 @@ pub fn initialize() -> Result<AccessToken, Error> {
     let (tx, rx) = mpsc::channel();
 
     //start the target server for the redirect
-    let (handler, _sender) = start_server(tx)?;
+    let (_handler, sender) = start_server(tx)?;
     open::that(user_consent_url).expect("Could not open the user consent url");
 
     //wait until the state and code vars are set
     let state_and_code = match rx.recv() {
         Ok(s) => s,
-        Err(_) => return Err(Error::from(ErrorKind::BrokenPipe))
-    }; 
+        Err(_) => return Err(Error::from(ErrorKind::BrokenPipe)),
+    };
 
     //tell the listening server to shut down
-    handler.join().unwrap();
+    match sender.send(()) {
+        Ok(_) => (),
+        Err(_) => return Err(Error::from(ErrorKind::ConnectionAborted)),
+    }
 
-
-    return Ok(block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)).unwrap());
+    return Ok(block_on(
+        google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0),
+    )
+    .unwrap());
 }
 
-
-
-
-fn start_server(tx: mpsc::Sender<(String, String)>) -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>), io::Error> {
-    let server = Server::new("localhost:8000", move |request|{
+fn start_server(
+    tx: mpsc::Sender<(String, String)>,
+) -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>), io::Error> {
+    let server = Server::new("localhost:8000", move |request| {
         match get_state_and_code(request.raw_url()) {
             Ok(state_and_code) => {
                 tx.send(state_and_code).unwrap();
                 Response::text("linked succesfully, you can close this page now!")
-            },
-            Err(e) => {
-                match e.kind() {
-                    ErrorKind::AddrInUse => Response::text("sssshhhhh! I'm trying to listen!"),
-                    _ => Response::text("The state or code given by google was invalid!")
-                }
-                
             }
+            Err(e) => match e.kind() {
+                ErrorKind::AddrInUse => Response::text("sssshhhhh! I'm trying to listen!"),
+                _ => Response::text("The state or code given by google was invalid!"),
+            },
         }
     });
 
     match server {
         Ok(s) => {
             return Ok(s.stoppable());
-        },
-        Err(_) => Err(Error::from(ErrorKind::Other))
+        }
+        Err(_) => Err(Error::from(ErrorKind::ConnectionRefused)),
     }
 }
 
-
 /// Extracts the state and code from a google response
-fn get_state_and_code(request: &str) -> Result<(String, String), io::Error>{
+fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
     let request_string = request.to_string();
     let state_stripped = match request_string.strip_prefix("/?state=") {
         Some(s) => s,
         None => return Err(Error::from(ErrorKind::AddrInUse)),
     };
 
-    let scope_stripped = match state_stripped.strip_suffix(&format!("&scope={}",&SCOPE)) {
+    let scope_stripped = match state_stripped.strip_suffix(&format!("&scope={}", &SCOPE)) {
         Some(s) => s,
         None => return Err(Error::from(ErrorKind::InvalidData)),
     };
 
-
     let state_and_code = match scope_stripped.rsplit_once("&code=") {
         Some(s) => (s.0.to_owned(), s.1.to_owned()),
-        None => return Err(Error::from(ErrorKind::InvalidData))
-    };    
-   return Ok(state_and_code);
+        None => return Err(Error::from(ErrorKind::InvalidData)),
+    };
+    return Ok(state_and_code);
 }
 
 /**
@@ -92,8 +93,7 @@ fn get_state_and_code(request: &str) -> Result<(String, String), io::Error>{
  * A file named client_secret.json needs to be in the directory of the Dragon-Display program
  */
 fn configure_environment() -> Result<(), io::Error> {
-
-    match env::var("GOOGLE_KEY_ENCODED"){
+    match env::var("GOOGLE_KEY_ENCODED") {
         Ok(_) => return Ok(()),
         Err(_) => (),
     };
@@ -102,15 +102,13 @@ fn configure_environment() -> Result<(), io::Error> {
     let mut path = env::current_dir()?;
     path.push("client_secret.json");
 
-    let mut file = OpenOptions::new()
-        .read(true)
-        .open(&path)?;
+    let mut file = OpenOptions::new().read(true).open(&path)?;
 
     // read the contents of the file to a string
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Ok(_) => (),
-        Err(_) => return Err(Error::from(ErrorKind::Unsupported))
+        Err(_) => return Err(Error::from(ErrorKind::Unsupported)),
     };
 
     //the variable to add as environment variable (base64 encoded json string)
@@ -124,7 +122,7 @@ fn configure_environment() -> Result<(), io::Error> {
 /**
  * Synchronizes images of the target drive
  */
-pub fn sync_drive(accesstoken: &str, refresh_token: &str){
+pub fn sync_drive(accesstoken: &str, refresh_token: &str) {
     let _ = configure_environment();
 
     let (accesstoken, refresh_token) = refresh_client(accesstoken, refresh_token);
@@ -132,9 +130,16 @@ pub fn sync_drive(accesstoken: &str, refresh_token: &str){
     let mut google_drive_client = block_on(Client::new_from_env(accesstoken, refresh_token));
     google_drive_client.set_auto_access_token_refresh(true);
 
+    // You try to make an api call.
+    // If this gives an error you call a reconnect function (part is in initialize)
+
     //query to look for the 'folder' named 'Uclia' on the client drive
     let query_1 = "name='Uclia' and mimeType = 'application/vnd.google-apps.folder'";
-    let folder = block_on(google_drive_client.files().list_all("", "", false, "", false, "", query_1, "", false, false, ""));
+    let folder = block_on(
+        google_drive_client
+            .files()
+            .list_all("", "", false, "", false, "", query_1, "", false, false, ""),
+    );
 
     let response = match folder {
         Ok(r) => r,
@@ -144,12 +149,23 @@ pub fn sync_drive(accesstoken: &str, refresh_token: &str){
         }
     };
 
-    
     //Loop through all files in the response -> temporary
     for f in response.body {
-        println!("file name: {}, file id: {}",f.name, f.id);
+        println!("file name: {}, file id: {}", f.name, f.id);
         let filter_query = format!("'{}' in parents and not trashed", f.id);
-        let list = block_on(google_drive_client.files().list_all("", "", false, "", false, "", &filter_query, "", false, false, ""));
+        let list = block_on(google_drive_client.files().list_all(
+            "",
+            "",
+            false,
+            "",
+            false,
+            "",
+            &filter_query,
+            "",
+            false,
+            false,
+            "",
+        ));
 
         let response_2 = match list {
             Ok(r) => r,
@@ -162,9 +178,7 @@ pub fn sync_drive(accesstoken: &str, refresh_token: &str){
         for img in response_2.body {
             println!("file name: {}", img.name)
         }
-
-    }   
-    
+    }
 }
 
 fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> (String, String) {
@@ -181,5 +195,5 @@ fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> (String, S
     //TODO: The new tokens should be stored in the campaign config file
     let new_access_token = token.access_token;
     let new_refresh_token = token.refresh_token;
-    return (new_access_token, new_refresh_token)
+    return (new_access_token, new_refresh_token);
 }

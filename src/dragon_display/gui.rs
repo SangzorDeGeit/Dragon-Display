@@ -3,7 +3,7 @@ use gtk::{Shortcut, ShortcutAction, ShortcutTrigger};
 use gtk::prelude::{ButtonExt, GridExt, GtkWindowExt, ShortcutTriggerExt};
 use gtk::{Button, Label, glib, Grid, ApplicationWindow};
 
-use crate::manage_campaign::config::CampaignData;
+use crate::dragon_display::manage_campaign::config::CampaignData;
 
 
 pub fn select_monitor_window(app: &adw::Application, campaign: &(String, CampaignData)) {
