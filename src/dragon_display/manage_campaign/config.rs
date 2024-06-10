@@ -1,4 +1,3 @@
-use gtk::glib::{property, HasParamSpec};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::{
@@ -39,21 +38,21 @@ struct Config {
 #[derive(Serialize, Deserialize)]
 pub struct Campaign {
     pub name: String,
+    pub path: String,
     pub sync_option: SynchronizationOption,
 }
 
 impl Default for Campaign {
     fn default() -> Self {
-        Campaign { name: "".to_string(), 
-                sync_option: SynchronizationOption::None { path: "".to_string() } }
+        Campaign { name: "".to_string(), path: "".to_string(), 
+                sync_option: SynchronizationOption::None}
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum SynchronizationOption {
-    None {path: String},
-    GoogleDrive {path: String,
-                access_token: String,
+    None,
+    GoogleDrive {access_token: String,
                 refresh_token: String},
 }
 
@@ -153,17 +152,14 @@ fn check_integrity(config: &Config) -> Result<(), io::Error> {
     if config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT) {
         return Err(Error::from(ErrorKind::OutOfMemory));
     }
-
-    let mut path_vector = Vec::new();
+    
+    let mut path_names = Vec::new();
     for campaign in config.campaigns {
-        let path = match campaign.sync_option {
-            SynchronizationOption::None { path } => path,
-            SynchronizationOption::GoogleDrive { path, access_token, refresh_token } => path,
-        };
-        if path_vector.contains(&path) {
+        let path = campaign.path;
+        if path_names.contains(&path) {
             return Err(Error::from(ErrorKind::InvalidData));
         }
-        path_vector.push(path);
+        path_names.push(path);
     }
 
     Ok(())

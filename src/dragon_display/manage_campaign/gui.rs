@@ -3,6 +3,7 @@ use gtk::{DialogFlags, ResponseType,ApplicationWindow, Stack};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 use adw::prelude::*;
 
+use std::cell::RefCell;
 use std::env;
 use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
@@ -33,8 +34,7 @@ pub fn select_campaign_window(app: &adw::Application){
 
     // use the settings var to store information about the gui
     // let settings = Settings::new(APP_ID);
-
-    let campaign_list = read_campaign_from_config();
+    let ref_app = RefCell::new(app);
 
     let container = Grid::new();
     let window = ApplicationWindow::builder()
@@ -42,6 +42,7 @@ pub fn select_campaign_window(app: &adw::Application){
     .title("Dragon-Display")
     .child(&container)
     .build();
+
 
     let mut max_campaigns_reached: bool = false;
     let label = Label::builder()
@@ -66,15 +67,9 @@ pub fn select_campaign_window(app: &adw::Application){
         .margin_start(6)
         .margin_end(6)
         .build();
+    
 
-    match campaign_list {
-        Ok(list) => {
-            for campaign in list (
-                let button = CampaignButton::new().set_cam
-            )
-        },
-        Err(_) => (),
-    }
+    let campaign_list = read_campaign_from_config();
     //To add the campaign buttons    
     match campaign_list {
         Ok(list) => {
@@ -82,31 +77,10 @@ pub fn select_campaign_window(app: &adw::Application){
             let mut i = 0;
             container.attach(&button_remove, i, 2, 1, 1);
             for campaign in list {
-                i += 1;
-                let campaign_button = Button::builder()
-                    .label(&campaign.0)
-                    .margin_top(6)
-                    .margin_bottom(6)
-                    .margin_start(6)
-                    .margin_end(6)
-                    .build();
-                campaign_button.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-                    match create_dir_all(&campaign.1.path) {
-                        Ok(_) => {
-                            //function of the campaign buttons
-                            window.destroy();
-                            dragon_display_init(&app, &campaign); 
-                        },
-                        Err(e) => {
-                            match e.kind() {
-                                ErrorKind::PermissionDenied => create_error_dialog(&app, "Could not create image folder, permission denied"),
-                                _ => create_error_dialog(&app, "could not start program")
-                            }
-                        } 
-                    }
-                }));
+                let campaign_button = CampaignButton::new(campaign, app, window);
                 container.attach(&campaign_button, i, 1, 1, 1)
             }
+
             if i%2 == 0 {
                 container.attach(&label, i/2, 0, 2, 1);
             } else {
@@ -114,6 +88,7 @@ pub fn select_campaign_window(app: &adw::Application){
             }
             if i >= i32::from(MAX_CAMPAIGN_AMOUNT) {max_campaigns_reached = true}
             container.attach(&button_add, i+1, 2, 1, 1);
+
         }
         Err(e) => {
             match e.kind() {
