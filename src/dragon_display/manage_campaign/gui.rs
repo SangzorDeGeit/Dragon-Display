@@ -3,13 +3,13 @@ use gtk::{DialogFlags, ResponseType,ApplicationWindow, Stack};
 use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
 use adw::prelude::*;
 
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::env;
 use std::fs::create_dir_all;
 use std::io::{Error, ErrorKind};
 
-use crate::dragon_display::{dragon_display_init, 
-                            manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}, 
+use crate::dragon_display::{manage_campaign::{config::read_campaign_from_config, add_campaign, remove_campaign, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}, 
                             google_drive_sync};
 use crate::widgets::campaign_button::{self, CampaignButton};
 
@@ -30,11 +30,10 @@ const ALLOWED_CHARS: [char; 65] = [
 ];
 
 // The "main"/"select campaign" window
-pub fn select_campaign_window(app: &adw::Application){
+pub fn select_campaign_window(app: &adw::Application) -> Result<ApplicationWindow, Error>{
 
     // use the settings var to store information about the gui
     // let settings = Settings::new(APP_ID);
-    let ref_app = RefCell::new(app);
 
     let container = Grid::new();
     let window = ApplicationWindow::builder()
@@ -77,7 +76,7 @@ pub fn select_campaign_window(app: &adw::Application){
             let mut i = 0;
             container.attach(&button_remove, i, 2, 1, 1);
             for campaign in list {
-                let campaign_button = CampaignButton::new(campaign, app, window);
+                let campaign_button = CampaignButton::new(campaign, ref_app, window);
                 container.attach(&campaign_button, i, 1, 1, 1)
             }
 
@@ -122,7 +121,7 @@ pub fn select_campaign_window(app: &adw::Application){
         remove_campaign_window(&app);
     }));
 
-    window.present();
+    Ok(window)
 }
 
 
