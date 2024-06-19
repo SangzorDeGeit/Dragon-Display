@@ -1,26 +1,25 @@
-use adw::ApplicationWindow;
 use gtk::{glib,subclass::prelude::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt}};
-use std::cell::RefCell;
-
+use async_channel::Sender;
+use std::fs;
+use std::cell::RefCell; 
+use std::io::{Error, ErrorKind};
 
 use crate::dragon_display::manage_campaign::config::Campaign;
+use crate::dragon_display::SelectMessage;
 
 use gtk::subclass::prelude::*;
 use gtk::prelude::*;
-use crate::dragon_display::start_dragon_display;
 
 mod imp {
-    use std::fs;
-
-    use crate::dragon_display::manage_campaign::gui::create_error_dialog;
 
     use super::*;
     // Object holding the campaign
     #[derive(Default)]
     pub struct CampaignButton{
-        pub campaign: Box<Campaign>,
-        pub window: RefCell<gtk::ApplicationWindow>,
-        pub app: RefCell<adw::Application>
+        pub campaign: RefCell<Campaign>,
+        // We make this an option so that the default trait is implemented
+        // We should panic if the Option is None (the sender is not set)
+        pub sender: RefCell<Option<Sender<SelectMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -35,7 +34,6 @@ mod imp {
     impl ObjectImpl for CampaignButton {
         fn constructed(&self) {
             self.parent_constructed();
-            self.obj().set_label(&self.campaign.name);
         }
     }
 
@@ -45,18 +43,25 @@ mod imp {
     // Trait shared by all buttons
     impl ButtonImpl for CampaignButton {
         fn clicked(&self) {
-            match fs::create_dir_all(self.campaign.path) {
-                Ok(_) => (),
+            match fs::create_dir_all(&self.campaign.borrow().path) {
+                Ok(_) => {
+                    let c = self.campaign.borrow().to_owned();
+                    self.sender
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_blocking(SelectMessage::Campaign { campaign: c }).expect("Channel closed");
+                },
                 Err(_) => {
-                    create_error_dialog(&self.app, "Could not create image folder for the campaign!");
-                    self.window.close();
-                    return;
+                    let _ = self.sender
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_blocking(SelectMessage::Error { error: Error::new(ErrorKind::Other, "An error occured while trying to create the folder for images"), fatal: true }).expect("Channel closed");
                 }
             }
-            self.window.take().close();
-            start_dragon_display(&self.app, self.campaign)
         }
-    }
+}
 }
 
 glib::wrapper! {
@@ -66,13 +71,15 @@ glib::wrapper! {
 }
 
 impl CampaignButton {
-    pub fn new(campaign: Campaign, app: RefCell<adw::Application>, window: RefCell<gtk::ApplicationWindow>) -> Self {
+    pub fn new(campaign: Campaign, sender: Option<Sender<SelectMessage>>) -> Self {
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        imp.campaign = Box::from(campaign);
-        imp.app = app;
-        imp.window = window;
+        object.set_label(&campaign.name);
+        imp.campaign.replace(campaign);
+        imp.sender.replace(sender);
 
+        
         object
+
     }
 }

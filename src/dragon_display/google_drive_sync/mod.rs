@@ -24,24 +24,26 @@ pub fn initialize() -> Result<AccessToken, Error> {
 
     //start the target server for the redirect
     let (_handler, sender) = start_server(tx)?;
-    open::that(user_consent_url).expect("Could not open the user consent url");
+    open::that(user_consent_url)?;
 
     //wait until the state and code vars are set
     let state_and_code = match rx.recv() {
         Ok(s) => s,
-        Err(_) => return Err(Error::from(ErrorKind::BrokenPipe)),
+        Err(_) => return Err(Error::new(ErrorKind::BrokenPipe, "Channel closed while listening on the server")),
     };
 
     //tell the listening server to shut down
     match sender.send(()) {
         Ok(_) => (),
-        Err(_) => return Err(Error::from(ErrorKind::ConnectionAborted)),
+        Err(_) => return Err(Error::new(ErrorKind::ConnectionAborted, "Could not close the listening server")),
     }
 
-    return Ok(block_on(
-        google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0),
-    )
-    .unwrap());
+    let result = match block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)) {
+        Ok(s) => s,
+        Err(_) => return Err(Error::new(ErrorKind::Other, "Could not retrieve the access token from the variables received by google")),
+    };
+    Ok(result)
+        
 }
 
 fn start_server(
@@ -64,7 +66,7 @@ fn start_server(
         Ok(s) => {
             return Ok(s.stoppable());
         }
-        Err(_) => Err(Error::from(ErrorKind::ConnectionRefused)),
+        Err(_) => Err(Error::new(ErrorKind::ConnectionRefused, "Could not start the listening server")),
     }
 }
 
@@ -73,17 +75,17 @@ fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
     let request_string = request.to_string();
     let state_stripped = match request_string.strip_prefix("/?state=") {
         Some(s) => s,
-        None => return Err(Error::from(ErrorKind::AddrInUse)),
+        None => return Err(Error::new(ErrorKind::AddrInUse, "Could not find state and code in the request")),
     };
 
     let scope_stripped = match state_stripped.strip_suffix(&format!("&scope={}", &SCOPE)) {
         Some(s) => s,
-        None => return Err(Error::from(ErrorKind::InvalidData)),
+        None => return Err(Error::new(ErrorKind::InvalidData, "The request gotten from google has unexpected format (no 'scope' found)")),
     };
 
     let state_and_code = match scope_stripped.rsplit_once("&code=") {
         Some(s) => (s.0.to_owned(), s.1.to_owned()),
-        None => return Err(Error::from(ErrorKind::InvalidData)),
+        None => return Err(Error::new(ErrorKind::InvalidData, "Could not find code in the google request")),
     };
     return Ok(state_and_code);
 }
@@ -98,17 +100,25 @@ fn configure_environment() -> Result<(), io::Error> {
         Err(_) => (),
     };
 
-    // Open the file that contains the client secret
     let mut path = env::current_dir()?;
     path.push("client_secret.json");
 
-    let mut file = OpenOptions::new().read(true).open(&path)?;
+    let mut file = match OpenOptions::new().read(true).open(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            match e.kind() {
+                ErrorKind::NotFound => return Err(Error::new(ErrorKind::NotFound, "Could not find client_secret.json file, please see the readme on github information on configuring google drive")),
+                ErrorKind::PermissionDenied => return Err(Error::new(ErrorKind::PermissionDenied, "Could not get permission to read the client_secret.json")),
+                _ => return Err(Error::new(ErrorKind::Other, "Some unknown error occured while trying to read the client_secret.json file")),
+            }
+        }
+    };
 
     // read the contents of the file to a string
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Ok(_) => (),
-        Err(_) => return Err(Error::from(ErrorKind::Unsupported)),
+        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "The client_secret.json file contained invalid data, please see the github readme for information on configuring google drive")),
     };
 
     //the variable to add as environment variable (base64 encoded json string)
@@ -131,6 +141,7 @@ pub fn sync_drive(accesstoken: &str, refresh_token: &str) {
     google_drive_client.set_auto_access_token_refresh(true);
 
     // You try to make an api call.
+    // if this gives an error you refresh the client using 'refresh client'
     // If this gives an error you call a reconnect function (part is in initialize)
 
     //query to look for the 'folder' named 'Uclia' on the client drive

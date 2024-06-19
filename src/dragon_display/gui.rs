@@ -5,7 +5,7 @@ use gtk::{Button, Label, glib, Grid, ApplicationWindow};
 use crate::dragon_display::manage_campaign::config::Campaign;
 
 
-pub fn select_monitor_window(app: &adw::Application, campaign: Box<Campaign>) {
+pub fn select_monitor_window(app: &adw::Application, campaign: Campaign) {
     let container = Grid::new();
     let window = ApplicationWindow::builder()
         .application(app)
