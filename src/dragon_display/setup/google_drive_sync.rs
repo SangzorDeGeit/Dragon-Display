@@ -1,17 +1,20 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use futures::{channel::oneshot::channel, executor::block_on};
+use futures::executor::block_on;
 use google_drive::{drives::Drives, files::Files, types::Drive, AccessToken, Client};
-use open;
 use rouille::{Response, Server};
 use std::{
     env,
     fs::OpenOptions,
     io::{self, Error, ErrorKind, Read},
-    sync::mpsc::{self, Sender},
+    sync::mpsc,
 };
+
+use super::Campaign;
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
+
+/// Initializes a google drive client
 pub fn initialize() -> Result<AccessToken, Error> {
     configure_environment()?;
     //initialize client
@@ -37,15 +40,17 @@ pub fn initialize() -> Result<AccessToken, Error> {
         Ok(_) => (),
         Err(_) => return Err(Error::new(ErrorKind::ConnectionAborted, "Could not close the listening server")),
     }
-
+    
     let result = match block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)) {
         Ok(s) => s,
         Err(_) => return Err(Error::new(ErrorKind::Other, "Could not retrieve the access token from the variables received by google")),
     };
+    
     Ok(result)
         
 }
 
+/// Starts a server that listens for the google state and code, for connecting with google drive
 fn start_server(
     tx: mpsc::Sender<(String, String)>,
 ) -> Result<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>), io::Error> {
@@ -72,10 +77,7 @@ fn start_server(
 
 /// Extracts the state and code from a google response
 fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
-    let request_string = request.to_string();
-    let state_stripped = match request_string.strip_prefix("/?state=") {
-        Some(s) => s,
-        None => return Err(Error::new(ErrorKind::AddrInUse, "Could not find state and code in the request")),
+    let request_string = request.to_string(); let state_stripped = match request_string.strip_prefix("/?state=") { Some(s) => s, None => return Err(Error::new(ErrorKind::AddrInUse, "Could not find state and code in the request")),
     };
 
     let scope_stripped = match state_stripped.strip_suffix(&format!("&scope={}", &SCOPE)) {
@@ -90,10 +92,56 @@ fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
     return Ok(state_and_code);
 }
 
-/**
- * Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
- * A file named client_secret.json needs to be in the directory of the Dragon-Display program
- */
+/// This function makes a gui where the user can select the path in google drive for where they
+/// want to download their files from
+pub async fn select_path(campaign: Campaign) -> Result<(String, String), io::Error> {
+    let (mut accesstoken, mut refresh_token) = match campaign.get_google_drive_properties() {
+        Some(t) => (t.0, t.1),
+        None => return Err(Error::new(ErrorKind::InvalidInput, "Sync was called on a no-sync campaign")),
+    };
+
+    configure_environment()?;
+
+    //query to look for the 'folder' named 'Uclia' on the client drive
+    let query_1 = "mimeType = 'application/vnd.google-apps.folder' and '1xG9_N833F2qqDQ5NaDA7G7OrR4UMnJyz' in parents";
+    // Try the query maximum twice: if the first request does not get a response we try to
+    // reconnect and try the query again. If it does not work a second time it will fail
+    for i in 0..2 {
+        let mut google_drive_client = Client::new_from_env(&accesstoken, &refresh_token).await;
+        google_drive_client.set_auto_access_token_refresh(true);
+        println!("Requesting");
+        let folder = google_drive_client
+                .files()
+                .list_all("user", "", false, "", false, "name", query_1, "", false, false, "").await;
+
+
+        let response = match folder {
+            Ok(r) => r,
+            Err(_) => {
+                println!("response error!");
+                if i==1 {
+                    return Err(Error::new(ErrorKind::NotConnected, "Could not connect to google drive"));
+                }
+                (accesstoken, refresh_token) = refresh_client(&accesstoken, &refresh_token).await?;
+                continue;
+            }, 
+        };
+        for file in response.body {
+            println!("name: {}, id: {}", file.name, file.id); 
+        }
+        break;
+    }
+
+    return Ok((String::from(accesstoken), String::from(refresh_token)));
+}
+
+/// Downloads the files from google drive to the designated folder
+pub fn sync_drive(campaign: Campaign) -> Result<(String, String), io::Error> {
+    todo!();
+}
+
+/// Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
+/// A file named client_secret.json needs to be in the directory of the Dragon-Display program
 fn configure_environment() -> Result<(), io::Error> {
     match env::var("GOOGLE_KEY_ENCODED") {
         Ok(_) => return Ok(()),
@@ -129,82 +177,19 @@ fn configure_environment() -> Result<(), io::Error> {
     Ok(())
 }
 
-/**
- * Synchronizes images of the target drive
- */
-pub fn sync_drive(accesstoken: &str, refresh_token: &str) {
-    let _ = configure_environment();
+// takes in an old refresh and access token and returns a new one;
+async fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> Result<(String, String), Error> {
+    let google_drive_client = Client::new_from_env(old_access_token, old_refresh_token).await;
+    let token = google_drive_client.refresh_access_token().await;
 
-    let (accesstoken, refresh_token) = refresh_client(accesstoken, refresh_token);
-
-    let mut google_drive_client = block_on(Client::new_from_env(accesstoken, refresh_token));
-    google_drive_client.set_auto_access_token_refresh(true);
-
-    // You try to make an api call.
-    // if this gives an error you refresh the client using 'refresh client'
-    // If this gives an error you call a reconnect function (part is in initialize)
-
-    //query to look for the 'folder' named 'Uclia' on the client drive
-    let query_1 = "name='Uclia' and mimeType = 'application/vnd.google-apps.folder'";
-    let folder = block_on(
-        google_drive_client
-            .files()
-            .list_all("", "", false, "", false, "", query_1, "", false, false, ""),
-    );
-
-    let response = match folder {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return;
-        }
-    };
-
-    //Loop through all files in the response -> temporary
-    for f in response.body {
-        println!("file name: {}, file id: {}", f.name, f.id);
-        let filter_query = format!("'{}' in parents and not trashed", f.id);
-        let list = block_on(google_drive_client.files().list_all(
-            "",
-            "",
-            false,
-            "",
-            false,
-            "",
-            &filter_query,
-            "",
-            false,
-            false,
-            "",
-        ));
-
-        let response_2 = match list {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return;
-            }
-        };
-
-        for img in response_2.body {
-            println!("file name: {}", img.name)
-        }
-    }
-}
-
-fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> (String, String) {
-    let google_drive_client = block_on(Client::new_from_env(old_access_token, old_refresh_token));
-    let token = block_on(google_drive_client.refresh_access_token());
-
+    println!("should come before second 'request', {:?}", token);
     let token = match token {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return ("".to_string(), "".to_string());
-        }
+        Err(_) => initialize()?,
     };
+
     //TODO: The new tokens should be stored in the campaign config file
     let new_access_token = token.access_token;
     let new_refresh_token = token.refresh_token;
-    return (new_access_token, new_refresh_token);
+    return Ok((new_access_token, new_refresh_token));
 }

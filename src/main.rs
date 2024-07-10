@@ -2,18 +2,15 @@
 use gtk::prelude::*;
 use gtk::glib;
 
-//core crates
-use tokio;
-
 //imported modules
 pub mod dragon_display;
 pub mod widgets;
 
 
-use dragon_display::select_campaign;
+use dragon_display::setup::select_campaign;
 
 
-pub const APP_ID: &str = "Dragon-Display";
+pub const APP_ID: &str = "display.dragon";
 
 #[tokio::main]
 async fn main()-> glib::ExitCode {

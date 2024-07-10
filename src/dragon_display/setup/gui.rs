@@ -1,6 +1,6 @@
 // packages for gui
 use gtk::{ResponseType,ApplicationWindow, Stack};
-use gtk::{Button, Label, Box, glib, Grid, Entry, DropDown, FileChooserNative, Dialog};
+use gtk::{Button, Label, glib, Grid, Entry, DropDown, FileChooserNative};
 use adw::prelude::*;
 use async_channel::Sender;
 
@@ -9,13 +9,13 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use crate::dragon_display::{AddRemoveMessage, SelectMessage};
-use crate::dragon_display::{manage_campaign::config::{read_campaign_from_config, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}, 
-                            google_drive_sync};
+use super::{AddRemoveMessage, SelectMessage};
+use super::config::{read_campaign_from_config, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}; 
+use super::google_drive_sync;
 use crate::widgets::campaign_button::CampaignButton;
 use crate::widgets::remove_button::RemoveButton;
+use super::{Campaign, SynchronizationOption};
 
-use super::config::{Campaign, SynchronizationOption};
 
 const ALLOWED_CHARS: [char; 65] = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 
@@ -33,10 +33,9 @@ const ALLOWED_CHARS: [char; 65] = [
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application, sender: Sender<SelectMessage>) -> Result<ApplicationWindow, Error> {
 
-    // use the settings var to store information about the gui
-    // let settings = Settings::new(APP_ID);
-
     let container = Grid::new();
+    container.set_hexpand(true);
+    container.set_vexpand(true);
     let window = ApplicationWindow::builder()
     .application(app)
     .title("Dragon-Display")
@@ -51,6 +50,8 @@ pub fn select_campaign_window(app: &adw::Application, sender: Sender<SelectMessa
         .margin_end(6)
         .wrap(true)
         .max_width_chars(40)
+        .hexpand_set(true)
+        .vexpand_set(true)
         .build();
     let button_add = Button::builder()
         .label("add campaign")
@@ -88,7 +89,7 @@ pub fn select_campaign_window(app: &adw::Application, sender: Sender<SelectMessa
         container.attach(&campaign_button, i, 1, 1, 1)
     }
 
-    // Center the label based on the amount of campaigns
+    // Center the label text based on the amount of campaigns
     if i%2 == 0 {
         container.attach(&label, i/2, 0, 2, 1);
     } else {
@@ -140,15 +141,6 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         .default_height(100)
         .build();
 
-    //initialize general widgets(s)
-    let button_cancel = Button::builder()
-        .label("Cancel")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
-
     //initialize widgets for page 1 -- input name
     let label_1 = Label::builder()
         .label("Name the campaign")
@@ -162,6 +154,13 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         .margin_start(6)
         .margin_end(6)
         .build();
+    let button_cancel_1 = Button::builder()
+        .label("Cancel")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
     let entry_1 = Entry::new();
     let campaign_name = Rc::new(RefCell::new("".to_owned()));
     entry_1.buffer().set_max_length(Some(CAMPAIGN_MAX_CHAR_LENGTH));
@@ -170,7 +169,7 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
     page_1.attach(&label_1, 2, 1, 1, 1);
     page_1.attach(&entry_1, 2, 2, 1, 1);
     page_1.attach(&button_next_1, 3, 3, 1, 1);
-    page_1.attach(&button_cancel, 1, 3, 1, 1);
+    page_1.attach(&button_cancel_1, 1, 3, 1, 1);
     page_1.set_halign(gtk::Align::Center);
     page_1.set_valign(gtk::Align::Center);
 
@@ -195,13 +194,20 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         .margin_start(6)
         .margin_end(6)
         .build();
+    let button_cancel_2 = Button::builder()
+        .label("Cancel")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
     let dropdown_2 = DropDown::from_strings(&SYNCHRONIZATION_OPTIONS);
 
     let page_2 = Grid::new();
     page_2.attach(&label_2, 2, 1, 1, 1);
     page_2.attach(&button_previous_2, 2, 3, 1, 1);
     page_2.attach(&button_next_2, 3, 3, 1, 1);
-    page_2.attach(&button_cancel, 1, 3, 1, 1);
+    page_2.attach(&button_cancel_2, 1, 3, 1, 1);
     page_2.attach(&dropdown_2, 2, 2, 1, 1);
     page_2.set_halign(gtk::Align::Center);
     page_2.set_valign(gtk::Align::Center);
@@ -221,7 +227,6 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         .wrap(true)
         .build();
         label_3.set_text("Choose location of image folder, this is the folder where all the images to be displayed by the program are stored.");
-        // label_3.set_text(format!("Choose location of the image folder, this the folder where all the images to be displayed by the program are stored. Current location: {}", &path).as_str()),
 
     let button_default_3 = Button::builder()
         .label("Use Default")
@@ -251,6 +256,13 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         .margin_start(6)
         .margin_end(6)
         .build();
+    let button_cancel_3 = Button::builder()
+        .label("Cancel")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
 
     let file_chooser = FileChooserNative::new(
         Some("Choose location of image folder"),
@@ -263,7 +275,7 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
     let page_3 = Grid::new();
     page_3.attach(&label_3, 1, 1, 3, 1);
     page_3.attach(&button_previous_3, 2, 3, 1, 1);
-    page_3.attach(&button_cancel, 1, 3, 1, 1);
+    page_3.attach(&button_cancel_3, 1, 3, 1, 1);
     page_3.attach(&button_default_3, 3, 2, 1, 1);
     page_3.attach(&button_choose_3, 2, 2, 1, 1);
     page_3.attach(&button_next_3, 3, 3, 1, 1);
@@ -299,7 +311,6 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
     page_4_gd.attach(&label_4_gd, 0, 0, 2, 1);
     page_4_gd.attach(&button_connect_4_gd, 1, 1, 1, 1);
     page_4_gd.attach(&button_previous_4_gd, 0, 1, 1, 1);
-    page_4_gd.attach(&button_cancel, 1, 1, 1, 1);
     page_4_gd.set_halign(gtk::Align::Center);
     page_4_gd.set_valign(gtk::Align::Center);
 
@@ -313,15 +324,6 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
     stack.set_visible_child(&page_1);
 
 
-
-
-
-    //set actions for general widget(s)
-    button_cancel.connect_clicked(glib::clone!(@strong sender => move |_| {
-        sender.send_blocking(AddRemoveMessage::Cancel).expect("Channel closed");
-    }));
-
-
     //set actions for widgets of page 1
     button_next_1.connect_clicked(glib::clone!(@strong app, @strong stack, @strong page_2, @strong sender, @strong campaign_name => move |_| {
         let entry_text = entry_1.text().to_string();
@@ -332,6 +334,11 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
             },
             Err(e) => sender.send_blocking(AddRemoveMessage::Error { error: e, fatal: false }).expect("Channel closed"),
         }
+    }));
+    
+    button_cancel_1.connect_clicked(glib::clone!(@strong sender => move |_| {
+        sender.send_blocking(AddRemoveMessage::Cancel).expect("Channel closed");
+        sender.close();
     }));
 
 
@@ -352,6 +359,11 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
             },
         }
         stack.set_visible_child(&page_3)
+    }));
+    
+    button_cancel_2.connect_clicked(glib::clone!(@strong sender => move |_| {
+        sender.send_blocking(AddRemoveMessage::Cancel).expect("Channel closed");
+        sender.close();
     }));
 
 
@@ -433,10 +445,15 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
         }
     }));
 
+    button_cancel_3.connect_clicked(glib::clone!(@strong sender => move |_| {
+        sender.send_blocking(AddRemoveMessage::Cancel).expect("Channel closed");
+        sender.close();
+    }));
+
 
 
     //set actions for widgets of optional page 4 -> Google Drive (gd)
-    button_connect_4_gd.connect_clicked(glib::clone!(@strong app => move |_| {
+    button_connect_4_gd.connect_clicked(glib::clone!(@strong sender, @strong app => move |_| {
         match google_drive_sync::initialize() {
             Ok(t) => {
                 let path_str = campaign_path.borrow().to_string();
@@ -567,6 +584,7 @@ pub fn remove_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMe
         campaign_button.set_margin_top(6);
         campaign_button.set_margin_start(6);
         campaign_button.set_margin_end(6);
+        campaign_button.set_halign(gtk::Align::Center);
         container.attach(&campaign_button, i, 1, 1, 1);
         i += 1;
     }
@@ -593,8 +611,6 @@ pub fn remove_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMe
 
     Ok(window)
 }
-
-
 
 
 fn remove_campaign_confirm(app: &adw::Application, campaign: Campaign, sender: Sender<AddRemoveMessage>) {
@@ -646,4 +662,68 @@ fn remove_campaign_confirm(app: &adw::Application, campaign: Campaign, sender: S
 
     confirm_window.present();
 
+} 1
+
+pub fn select_monitor_window(app: &adw::Application) {
+    let container = Grid::new();
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&container)
+        .build();
+
+    let label = Label::builder()
+        .label("Choose the screen that you want to display the images on")
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
+    let display = match gdk4::Display::default() {
+        Some(d) => d,
+        None => todo!(),
+    };
+
+    let mut i: u32 = 0;
+    while let Some(monitor) = display.monitors().item(i) {
+        let monitor = monitor.to_value()
+            .get::<gdk4::Monitor>()
+            .expect("Value needs to be monitor");
+
+        let monitor_button = Button::builder()
+            .label(format!("{}cm x {}cm", monitor.height_mm()/10, monitor.width_mm()/10).as_str())
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .build();
+
+        monitor_button.connect_clicked(glib::clone!(@strong window => move |_| {
+            window.destroy();
+            todo!("Send the monitor to the manager");
+        }));
+
+        let column = match i32::try_from(i) {
+            Ok(c) => c,
+            Err(_) => todo!("break here and display an error message (too many monitors)"),
+        };
+        container.attach(&monitor_button, column, 1, 1, 1);
+
+        i = i+1;
+    }
+    let monitor_amount = match i32::try_from(i) {
+        Ok(c) => c,
+        Err(_) => todo!("break here and display an error message (too many monitors)"),
+    };
+    if monitor_amount == 0 {
+        label.set_text("Could not detect any monitors");
+        container.attach(&label, 0, 0, 0, 0);
+    } else if monitor_amount%2 == 1 {
+        container.attach(&label, monitor_amount/2, 0, 1, 1);
+    } else {
+        container.attach(&label, (monitor_amount-1)/2, 0, 2, 1);
+    }
+
+    window.present();
 }

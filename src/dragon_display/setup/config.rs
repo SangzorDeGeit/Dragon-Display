@@ -1,10 +1,11 @@
-use serde::{Deserialize, Serialize};
 use std::env;
+use std::fs::remove_dir_all;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Error, ErrorKind, Read, Write},
 };
 use toml::to_string;
+use super::{Config, Campaign};
 
 const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH : u16 = 25;
@@ -17,47 +18,6 @@ enum Operation {
     APPEND,
 }
 
-/// Structure representing the name of the campaign and the corresponding data
-/// # Example
-/// A .config.toml file containing:  
-/// ```
-/// [campaigns.adventure]  
-/// sync_option: "None"  
-/// path: "path/to/file"
-/// [campaigns.adventure2]
-/// sync_option: "google_drive"
-/// path: "path/to/file"
-/// access_token: "acess_token"
-/// refresh_token: "refresh_token"  
-/// ```  
-/// Will be structured as a hashmap with two key-value pairs. the first key "adventure",
-/// with value the campaignData under it until '\[campaigns.adventure2\]'.
-/// As second key "adventure2" with as value the campaignData under that.
-#[derive(Serialize, Deserialize, Default)]
-struct Config {
-    campaigns: Vec<Campaign>
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Campaign {
-    pub name: String,
-    pub path: String,
-    pub sync_option: SynchronizationOption,
-}
-
-impl Default for Campaign {
-    fn default() -> Self {
-        Campaign { name: "".to_string(), path: "".to_string(), 
-                sync_option: SynchronizationOption::None}
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum SynchronizationOption {
-    None,
-    GoogleDrive {access_token: String,
-                refresh_token: String},
-}
 
 /// Tries to read the campaign configurations from the config file and puts them in a Vector.
 /// if there is no config file this method will return an empty vector
@@ -127,6 +87,7 @@ pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> 
     let mut config_file = get_campaign_config(Operation::WRITE)?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
+    remove_dir_all(&campaign.path).unwrap_or(()); 
     Ok(())
 }
 

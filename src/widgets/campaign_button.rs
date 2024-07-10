@@ -1,11 +1,11 @@
-use gtk::{glib,subclass::prelude::{ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt}};
+use gtk::{glib,subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt}};
 use async_channel::Sender;
 use std::fs;
 use std::cell::RefCell; 
 use std::io::{Error, ErrorKind};
 
-use crate::dragon_display::manage_campaign::config::Campaign;
-use crate::dragon_display::SelectMessage;
+use crate::dragon_display::setup::Campaign;
+use crate::dragon_display::setup::SelectMessage;
 
 use gtk::subclass::prelude::*;
 use gtk::prelude::*;
