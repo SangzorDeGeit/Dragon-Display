@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures::executor::block_on;
-use google_drive::{drives::Drives, files::Files, types::Drive, AccessToken, Client};
+use google_drive::{AccessToken, Client};
 use rouille::{Response, Server};
 use std::{
     env,
@@ -9,14 +9,24 @@ use std::{
     sync::mpsc,
 };
 
-use super::Campaign;
-
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
+pub enum InitializeMessage {
+    UserConsentUrl { url: String },
+    Token { token: AccessToken },
+    Error { error: Error },
+}
 
-/// Initializes a google drive client
-pub fn initialize() -> Result<AccessToken, Error> {
-    configure_environment()?;
+/// Initializes a google drive client using the oauth process
+pub fn initialize(sender: async_channel::Sender<InitializeMessage>) {
+    match configure_environment() {
+        Ok(_) => (),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: e })
+                .expect("Drive Frontend channel closed");
+            return
+        }
+    }
     //initialize client
     let mut google_drive_client = block_on(Client::new_from_env("", ""));
 
@@ -26,27 +36,55 @@ pub fn initialize() -> Result<AccessToken, Error> {
     let (tx, rx) = mpsc::channel();
 
     //start the target server for the redirect
-    let (_handler, sender) = start_server(tx)?;
-    open::that(user_consent_url)?;
+    let (_handler, server_sender) = match start_server(tx) {
+        Ok((h, s)) => (h, s),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: e })
+                .expect("Drive Frontend channel closed");
+            return
+        }
+    };
+
+    match open::that(user_consent_url) {
+        Ok(_) => (),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: e })
+                .expect("Drive Frontend channel closed");
+            return
+        }
+    }
+    sender.send_blocking(InitializeMessage::UserConsentUrl { url: user_consent_url }).expect("Drive Frontend channel closed");
 
     //wait until the state and code vars are set
     let state_and_code = match rx.recv() {
         Ok(s) => s,
-        Err(_) => return Err(Error::new(ErrorKind::BrokenPipe, "Channel closed while listening on the server")),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::BrokenPipe, "Channel closed while listening on the server") })
+                .expect("Drive Frontend channel closed");
+            return
+        }
     };
 
     //tell the listening server to shut down
-    match sender.send(()) {
+    match server_sender.send(()) {
         Ok(_) => (),
-        Err(_) => return Err(Error::new(ErrorKind::ConnectionAborted, "Could not close the listening server")),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::ConnectionAborted, "Could not close the listening server")})
+                .expect("Drive Frontend channel closed");
+            return
+        }
     }
     
     let result = match block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)) {
         Ok(s) => s,
-        Err(_) => return Err(Error::new(ErrorKind::Other, "Could not retrieve the access token from the variables received by google")),
+        Err(e) => {
+            sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::Other, "Could not retrieve the access token from the google response")})
+                .expect("Drive Frontend channel closed");
+            return
+        }
     };
     
-    Ok(result)
+    sender.send_blocking(InitializeMessage::Token { token: result }).expect("Drive Frontend channel closed");
         
 }
 
@@ -182,10 +220,9 @@ async fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> Resu
     let google_drive_client = Client::new_from_env(old_access_token, old_refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 
-    println!("should come before second 'request', {:?}", token);
     let token = match token {
         Ok(t) => t,
-        Err(_) => initialize()?,
+        Err(_) => todo!("There should be some re-initialization here"),
     };
 
     //TODO: The new tokens should be stored in the campaign config file

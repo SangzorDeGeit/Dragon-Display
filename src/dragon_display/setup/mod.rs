@@ -2,34 +2,21 @@ pub mod gui;
 pub mod config;
 pub mod google_drive_sync;
 
-use std::io::Error;
+use std::{io::Error, thread};
 
 use adw::prelude::*;
-use futures::executor::block_on;
+use async_channel::unbounded;
+use google_drive::AccessToken;
+use google_drive_sync::initialize;
 use gtk::{glib, ApplicationWindow, Button, Grid, Label};
 use config::{remove_campaign_from_config, write_campaign_to_config};
 use serde::{Serialize, Deserialize};
 
 use gui::{
-    add_campaign_window, remove_campaign_window, select_campaign_window, select_monitor_window,
+    add_campaign_window, connect_google_drive_window, remove_campaign_window, select_campaign_window, select_monitor_window
 };
 
 /// Structure representing the name of the campaign and the corresponding data
-/// # Example
-/// A .config.toml file containing:  
-/// ```
-/// [campaigns.adventure]  
-/// sync_option: "None"  
-/// path: "path/to/file"
-/// [campaigns.adventure2]
-/// sync_option: "google_drive"
-/// path: "path/to/file"
-/// access_token: "acess_token"
-/// refresh_token: "refresh_token"  
-/// ```  
-/// Will be structured as a hashmap with two key-value pairs. the first key "adventure",
-/// with value the campaignData under it until '\[campaigns.adventure2\]'.
-/// As second key "adventure2" with as value the campaignData under that.
 #[derive(Serialize, Deserialize, Default)]
 struct Config {
     campaigns: Vec<Campaign>
@@ -75,7 +62,7 @@ pub enum SelectMessage {
     Error { error: Error, fatal: bool },
 }
 
-/// The messages that the remove and add campaign window can send
+/// The messages that the add campaign window can send
 pub enum AddRemoveMessage {
     Campaign { campaign: Campaign },
     Cancel,
