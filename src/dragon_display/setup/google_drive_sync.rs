@@ -1,14 +1,11 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use futures::executor::block_on;
 use google_drive::{AccessToken, Client};
 use rouille::{Response, Server};
 use std::{
-    env,
-    fs::OpenOptions,
-    io::{self, Error, ErrorKind, Read},
-    sync::mpsc,
+    collections::HashMap, env, fs::OpenOptions, io::{self, Error, ErrorKind, Read}, sync::mpsc
 };
 
+use super::Campaign;
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
 pub enum InitializeMessage {
@@ -17,8 +14,15 @@ pub enum InitializeMessage {
     Error { error: Error },
 }
 
+pub struct FolderResult<'a> {
+    pub id_name_map: HashMap<String, String>,
+    pub id_children_map: HashMap<&'a str, Vec<&'a str>>,
+    pub access_token: String,
+    pub refresh_token: String,
+}
+
 /// Initializes a google drive client using the oauth process
-pub fn initialize(sender: async_channel::Sender<InitializeMessage>) {
+pub async fn initialize(sender: async_channel::Sender<InitializeMessage>) {
     match configure_environment() {
         Ok(_) => (),
         Err(e) => {
@@ -28,7 +32,7 @@ pub fn initialize(sender: async_channel::Sender<InitializeMessage>) {
         }
     }
     //initialize client
-    let mut google_drive_client = block_on(Client::new_from_env("", ""));
+    let mut google_drive_client = Client::new_from_env("", "").await;
 
     //make a consent url
     let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
@@ -45,7 +49,7 @@ pub fn initialize(sender: async_channel::Sender<InitializeMessage>) {
         }
     };
 
-    match open::that(user_consent_url) {
+    match open::that(user_consent_url.clone()) {
         Ok(_) => (),
         Err(e) => {
             sender.send_blocking(InitializeMessage::Error { error: e })
@@ -55,37 +59,34 @@ pub fn initialize(sender: async_channel::Sender<InitializeMessage>) {
     }
     sender.send_blocking(InitializeMessage::UserConsentUrl { url: user_consent_url }).expect("Drive Frontend channel closed");
 
+    println!("waiting for the message");
     //wait until the state and code vars are set
     let state_and_code = match rx.recv() {
         Ok(s) => s,
-        Err(e) => {
+        Err(_) => {
             sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::BrokenPipe, "Channel closed while listening on the server") })
                 .expect("Drive Frontend channel closed");
             return
         }
     };
+    println!("gotten the message");
 
     //tell the listening server to shut down
     match server_sender.send(()) {
         Ok(_) => (),
-        Err(e) => {
+        Err(_) => {
             sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::ConnectionAborted, "Could not close the listening server")})
                 .expect("Drive Frontend channel closed");
             return
         }
     }
+    println!("told server to shut down");
     
-    let result = match block_on(google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0)) {
-        Ok(s) => s,
-        Err(e) => {
-            sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::Other, "Could not retrieve the access token from the google response")})
-                .expect("Drive Frontend channel closed");
-            return
-        }
+    match google_drive_client.get_access_token(&state_and_code.1, &state_and_code.0).await {
+        Ok(result) => sender.send_blocking(InitializeMessage::Token { token: result }).expect("Drive Frontend channel closed"),
+        Err(_) => sender.send_blocking(InitializeMessage::Error { error: Error::new(ErrorKind::Other, "Could not retrieve the access token from the google response")})
+                .expect("Drive Frontend channel closed"),
     };
-    
-    sender.send_blocking(InitializeMessage::Token { token: result }).expect("Drive Frontend channel closed");
-        
 }
 
 /// Starts a server that listens for the google state and code, for connecting with google drive
@@ -130,47 +131,62 @@ fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
     return Ok(state_and_code);
 }
 
-/// This function makes a gui where the user can select the path in google drive for where they
-/// want to download their files from
-pub async fn select_path(campaign: Campaign) -> Result<(String, String), io::Error> {
-    let (mut accesstoken, mut refresh_token) = match campaign.get_google_drive_properties() {
-        Some(t) => (t.0, t.1),
-        None => return Err(Error::new(ErrorKind::InvalidInput, "Sync was called on a no-sync campaign")),
-    };
+/// Does a request to google to list all the folders under the given folder_id and returns all the
+/// child folders and the tokens, in the case they are updated during the request
+/// This method recursively calls itself to return two hashmaps. One linking each id to a vector of
+/// children, the other linking each id to their name. This function should be called with
+/// folder_id = 'root'.
+pub async fn get_folder_tree<'a>(folder_result: &'a mut FolderResult<'a>, folder_id: String) -> Result<&'a mut FolderResult<'a>, io::Error> {
 
     configure_environment()?;
 
+    // Extract all needed variables from the folder result
+    let id_name_map = &mut folder_result.id_name_map;
+    let id_children_map = &mut folder_result.id_children_map;
+    let access_token = &mut folder_result.access_token;
+    let refresh_token = &mut folder_result.refresh_token;
+
     //query to look for the 'folder' named 'Uclia' on the client drive
-    let query_1 = "mimeType = 'application/vnd.google-apps.folder' and '1xG9_N833F2qqDQ5NaDA7G7OrR4UMnJyz' in parents";
+    let query = format!("mimeType = 'application/vnd.google-apps.folder' and '{}' in parents", folder_id);
     // Try the query maximum twice: if the first request does not get a response we try to
     // reconnect and try the query again. If it does not work a second time it will fail
+
+
+    id_name_map.insert("hello".to_string(), "goodbye".to_string());
     for i in 0..2 {
-        let mut google_drive_client = Client::new_from_env(&accesstoken, &refresh_token).await;
+        let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
         google_drive_client.set_auto_access_token_refresh(true);
         println!("Requesting");
-        let folder = google_drive_client
+        let request = google_drive_client
                 .files()
-                .list_all("user", "", false, "", false, "name", query_1, "", false, false, "").await;
+                .list_all("user", "", false, "", false, "name", &query, "", false, false, "").await;
 
 
-        let response = match folder {
+        let response = match request {
             Ok(r) => r,
             Err(_) => {
                 println!("response error!");
                 if i==1 {
                     return Err(Error::new(ErrorKind::NotConnected, "Could not connect to google drive"));
                 }
-                (accesstoken, refresh_token) = refresh_client(&accesstoken, &refresh_token).await?;
+                (access_token, refresh_token) = refresh_client(access_token, refresh_token).await?;
                 continue;
             }, 
         };
-        for file in response.body {
-            println!("name: {}, id: {}", file.name, file.id); 
+        let mut children: Vec<&str> = Vec::new();
+        for folder in response.body {
+            id_name_map.insert(folder.id.clone(), folder.name);
         }
+        for id in id_name_map.keys() {
+            children.push(&id);
+        }
+        id_children_map.insert(&folder_id, children);
+
         break;
     }
 
-    return Ok((String::from(accesstoken), String::from(refresh_token)));
+    return Ok(folder_result)
+    
 }
 
 /// Downloads the files from google drive to the designated folder
@@ -216,7 +232,7 @@ fn configure_environment() -> Result<(), io::Error> {
 }
 
 // takes in an old refresh and access token and returns a new one;
-async fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> Result<(String, String), Error> {
+async fn refresh_client<'a>(access_token: &'a mut String, refresh_token: &'a mut String) -> Result<(&'a mut String, &'a mut String), Error> {
     let google_drive_client = Client::new_from_env(old_access_token, old_refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 
@@ -226,7 +242,9 @@ async fn refresh_client(old_access_token: &str, old_refresh_token: &str) -> Resu
     };
 
     //TODO: The new tokens should be stored in the campaign config file
-    let new_access_token = token.access_token;
-    let new_refresh_token = token.refresh_token;
+    let new_access_token = &mut token.access_token;
+    let new_refresh_token = &mut token.refresh_token;
+    old_access_token = new_access_token;
+    old_refresh_token = new_refresh_token;
     return Ok((new_access_token, new_refresh_token));
 }

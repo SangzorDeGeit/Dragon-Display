@@ -1,10 +1,11 @@
 // packages for gui
-use gtk::{ApplicationWindow, ListBox, ResponseType, ScrolledWindow, Stack};
+use gtk::{ApplicationWindow, ListBox, ListItem, ResponseType, ScrolledWindow, Stack, StringObject, TreeListModel, TreeListRow};
 use gtk::{Button, Label, glib, Grid, Entry, DropDown, FileChooserNative, gio};
 use adw::prelude::*;
 use async_channel::{Receiver, Sender};
 use glib::{clone, spawn_future_local};
 
+use std::collections::HashMap;
 use std::env;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
@@ -12,9 +13,11 @@ use std::cell::RefCell;
 
 use super::{AddRemoveMessage, SelectMessage};
 use super::config::{read_campaign_from_config, MAX_CAMPAIGN_AMOUNT, CAMPAIGN_MAX_CHAR_LENGTH, SYNCHRONIZATION_OPTIONS}; 
-use super::google_drive_sync::{InitializeMessage, initialize};
+use super::google_drive_sync::{get_folder_tree, initialize, InitializeMessage, FolderResult};
 use crate::widgets::campaign_button::CampaignButton;
+use crate::widgets::google_folder_object::GoogleFolderObject;
 use crate::widgets::remove_button::RemoveButton;
+use crate::runtime;
 use super::{Campaign, SynchronizationOption};
 
 
@@ -52,6 +55,7 @@ impl CustomMargin for Label {
         self.set_margin_bottom(margin);
     }
 }
+
 
 // The "main"/"select campaign" window
 pub fn select_campaign_window(app: &adw::Application, sender: Sender<SelectMessage>) -> Result<ApplicationWindow, Error> {
@@ -434,40 +438,35 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
 
 
     //set actions for widgets of optional page 4 -> Google Drive (gd)
-    button_connect_4_gd.connect_clicked(clone!(@strong sender, @strong app => move |_| {
+    button_connect_4_gd.connect_clicked(clone!(@strong sender, @strong app, @strong campaign_name, @strong campaign_path, @strong button_connect_4_gd => move |_| {
         let (gd_sender, gd_receiver) = async_channel::unbounded();
         button_connect_4_gd.set_sensitive(false);
-        gio::spawn_blocking(move || {
-            initialize(gd_sender);
+        runtime().spawn(async move {
+            initialize(gd_sender).await;
         });
-        glib::spawn_future_local( async move {
+        glib::spawn_future_local(clone!(@strong app, @strong sender, @strong campaign_name, @strong campaign_path, @strong label_4_gd => async move {
             while let Ok(message) = gd_receiver.recv().await {
                 match message {
-                    InitializeMessage::UserConsentUrl { url } => todo!("update the label"),
-                    InitializeMessage::Token { token } => {
-
+                    InitializeMessage::UserConsentUrl { url } => {
+                        let updated_label = format!("In order to use the google drive synchronization service you need to give dragon display permission to connect to your google account.\n Your browser should open automatically, if it doesn't open go to the following link on your browser: {}", url);
+                        label_4_gd.set_text(&updated_label);
                     }
-                    InitializeMessage::Error { error } => todo!("send error to manager"),
+                    InitializeMessage::Token { token } => {
+                        let name = campaign_name.borrow().to_string();
+                        let path_str = campaign_path.borrow().to_string();
+                        let access_token = token.access_token;
+                        let refresh_token = token.refresh_token;
+                        let campaign = Campaign {
+                            name: name,
+                            path: path_str,
+                            sync_option: SynchronizationOption::GoogleDrive { access_token: access_token, refresh_token: refresh_token, google_drive_path: "".to_string()},
+                        };
+                        select_google_drive_path(&app, campaign, sender.clone()); 
+                    }
+                    InitializeMessage::Error { error } => sender.send_blocking(AddRemoveMessage::Error { error: error, fatal: true }).expect("channel closed"),
                 }
             }
-        });
-        // match initialize(gd_sender) {
-        //     Ok(t) => {
-        //         let path_str = campaign_path.borrow().to_string();
-        //         let name = campaign_name.borrow().to_string();
-        //         let access_token = t.access_token;
-        //         let refresh_token = t.refresh_token;
-        //         let campaign = Campaign {
-        //             name: name,
-        //             path: path_str,
-        //             sync_option: SynchronizationOption::GoogleDrive { access_token: access_token, refresh_token: refresh_token },
-        //         };
-        //         sender.clone().send_blocking(AddRemoveMessage::Campaign { campaign: campaign }).expect("Channel closed");
-        //     },
-        //     Err(e) => {
-        //         sender.clone().send_blocking(AddRemoveMessage::Error { error: e, fatal: false }).expect("Channel closed");
-        //     }
-        // }
+        }));
     }));
 
     button_previous_4_gd.connect_clicked(clone!(@strong stack => move |_| {
@@ -478,7 +477,99 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
 }
 
 
+/// This method is part of the add campaign process. It is split from the original
+/// add_campaign_window method because this page needs data (tokens) to setup the page, this is not
+/// known yet when naming the campaign and selecting the option. Therefore this part is in a
+/// seperate window
+fn select_google_drive_path(app: &adw::Application, campaign: Campaign, sender: Sender<AddRemoveMessage>) {
+    // Maybe a short loading screen while the folders are being requested
 
+    let container = Grid::new();
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&container)
+        .build();
+
+    let button_cancel = Button::builder()
+        .label("Cancel")
+        .build();
+    button_cancel.set_margin_all(6);
+
+    let button_choose = Button::builder()
+        .label("Choose")
+        .build();
+    button_choose.set_margin_all(6);
+
+    let label = Label::builder()
+        .label("Select a folder where Dragon-Display will download the images from")
+        .wrap(true)
+        .build();
+    label.set_margin_all(6);
+    
+    let label_path = Label::builder()
+        .label("Current path: 'root'")
+        .wrap(true)
+        .build();
+    label_path.set_margin_all(6);
+    
+    let drives_box = ListBox::new();
+    let scrollwindow = ScrolledWindow::builder()
+        .child(&drives_box)
+        .build();
+
+    container.attach(&label, 0, 0, 2, 1);
+    container.attach(&label_path, 0, 1, 2, 1);
+    container.attach(&scrollwindow, 0, 3, 2, 1);
+    container.attach(&button_cancel, 0, 4, 1, 1);
+    container.attach(&button_choose, 1, 4, 1, 1);
+
+    let(mut access_token, mut refresh_token) = match campaign.sync_option {
+        SynchronizationOption::GoogleDrive { access_token, refresh_token, .. } => (access_token, refresh_token), 
+        _ => {
+            sender.send_blocking(AddRemoveMessage::Error { error: Error::new(ErrorKind::InvalidInput, "Google select path was called for a none google drive sync campaign"), fatal: false })
+                .expect("channel closed");
+            return
+        }
+    };
+
+    runtime().spawn(async move {
+        let id_name_map = HashMap::new();
+        let id_children_map = HashMap::new();
+        let mut folder_result = FolderResult {
+            id_name_map,
+            id_children_map,
+            access_token: &mut access_token,
+            refresh_token: &mut refresh_token,
+        };
+
+        let result = match get_folder_tree(&mut folder_result, "root".to_string()).await {
+            Ok(r) => r,
+            Err(e) => {
+                sender.send_blocking(AddRemoveMessage::Error { error: e, fatal: false }).expect("Channel closed");
+                return
+            },
+        };
+    });
+    // we create a liststore for our root model, this contains one element labelled My drive
+    let root_folder = GoogleFolderObject::new("My Drive".to_string(), "root".to_string());
+    let root_vec: Vec<GoogleFolderObject> = vec![root_folder];
+    let root_store = gio::ListStore::new::<GoogleFolderObject>();
+    
+    // add the root folder (as vector) to the root_model
+    root_store.extend_from_slice(&root_vec);
+    // we create a treelistmodel, containing treelistrows and a TreeExpander
+    let tree_model = TreeListModel::new(root_store, false, true,  move |item| {
+        let folder_item = item.downcast_ref::<GoogleFolderObject>().expect("Found a non folder object when creating the google drive tree");
+        let store = gio::ListStore::new::<GoogleFolderObject>();
+
+        
+        // populate the store using the properties of the folder item
+        Some(store.upcast::<gio::ListModel>())
+    });
+    
+    window.present();
+}
 
 
 
@@ -645,47 +736,6 @@ fn remove_campaign_confirm(app: &adw::Application, campaign: Campaign, sender: S
 
 } 
 
-/// The campaign's google drive path may be empty
-pub fn select_google_drive_path(app: &adw::Application, campaign: Campaign) -> ApplicationWindow {
-    // Maybe a short loading screen while the folders are being requested
-
-    let container = Grid::new();
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Dragon-Display")
-        .child(&container)
-        .build();
-
-    let button_cancel = Button::builder()
-        .label("Cancel")
-        .build();
-    button_cancel.set_margin_all(6);
-
-    let button_choose = Button::builder()
-        .label("Choose")
-        .build();
-    button_choose.set_margin_all(6);
-
-    let label = Button::builder()
-        .label("Select a folder where Dragon-Display will download the images from")
-        .build();
-    label.set_margin_all(6);
-    
-    let label_path = Button::builder()
-        .label("Current path: 'root'")
-        .build();
-    label_path.set_margin_all(6);
-    
-    let drives_box = ListBox::new();
-    let scrollwindow = ScrolledWindow::builder()
-        .child(&drives_box)
-        .build();
-    // ListboxRow is the widget that can be set as children for the listbox
-    // Every time a row is clicked it will make a request for the folders in that row
-    // Make new listbox with children
-    // detach old listbox and attach new one
-    window
-}
 
 pub fn select_monitor_window(app: &adw::Application) {
     let container = Grid::new();

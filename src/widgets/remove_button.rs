@@ -8,10 +8,6 @@ use gtk::subclass::prelude::*;
 use gtk::prelude::*;
 
 mod imp {
-
-
-
-
     use super::*;
     // Object holding the campaign
     #[derive(Default)]

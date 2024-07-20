@@ -2,18 +2,15 @@ pub mod gui;
 pub mod config;
 pub mod google_drive_sync;
 
-use std::{io::Error, thread};
+use std::io::Error;
 
 use adw::prelude::*;
-use async_channel::unbounded;
-use google_drive::AccessToken;
-use google_drive_sync::initialize;
 use gtk::{glib, ApplicationWindow, Button, Grid, Label};
 use config::{remove_campaign_from_config, write_campaign_to_config};
 use serde::{Serialize, Deserialize};
 
 use gui::{
-    add_campaign_window, connect_google_drive_window, remove_campaign_window, select_campaign_window, select_monitor_window
+    add_campaign_window, remove_campaign_window, select_campaign_window, select_monitor_window
 };
 
 /// Structure representing the name of the campaign and the corresponding data
@@ -37,12 +34,12 @@ impl Default for Campaign {
 }
 
 impl Campaign {
-    /// Returns the refresh and access token of this campaign
+    /// Returns the refresh token, access token, and google drive path of this campaign
     /// Returns empty string if the campaign is not a google drive campaign
-    pub fn get_google_drive_properties(&self) -> Option<(String, String)> {
+    pub fn get_google_drive_properties(&self) -> Option<(String, String, String)> {
         match &self.sync_option {
             SynchronizationOption::None => None,
-            SynchronizationOption::GoogleDrive { access_token, refresh_token } => Some((access_token.to_string(), refresh_token.to_string())),
+            SynchronizationOption::GoogleDrive { access_token, refresh_token, google_drive_path} => Some((access_token.to_string(), refresh_token.to_string(), google_drive_path.to_string())),
         }
     }
 }
@@ -51,7 +48,8 @@ impl Campaign {
 pub enum SynchronizationOption {
     None,
     GoogleDrive {access_token: String,
-                refresh_token: String},
+                refresh_token: String,
+                google_drive_path: String},
 }
 
 /// The messages that the select_campaign_window can send
@@ -169,7 +167,6 @@ fn add_campaign(app: &adw::Application) {
 }
 
 pub async fn start_dragon_display(app: &adw::Application, campaign: Campaign) {
-    let _ = google_drive_sync::select_path(campaign).await;
     // let monitor = select_monitor_window(&app);
     //checks if images need to be synchronized
     //starts the main application control panel
