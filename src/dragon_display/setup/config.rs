@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::remove_dir_all;
+use std::fs::{remove_dir, remove_dir_all};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Error, ErrorKind, Read, Write},
@@ -69,6 +69,7 @@ pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> 
         return Err(Error::new(ErrorKind::NotFound, "Expected a config folder but could not find one while deleting the campaign"));
     }
     if campaign_list.len() == 1 {
+        remove_dir_all(&campaign.path).unwrap_or(());
         return remove_campaign_config();
     }
 
@@ -87,7 +88,7 @@ pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> 
     let mut config_file = get_campaign_config(Operation::WRITE)?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
-    remove_dir_all(&campaign.path).unwrap_or(()); 
+    remove_dir_all(&campaign.path).unwrap_or(());
     Ok(())
 }
 

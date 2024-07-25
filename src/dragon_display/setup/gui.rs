@@ -380,7 +380,6 @@ pub fn add_campaign_window(app: &adw::Application, sender: Sender<AddRemoveMessa
 
         label_3.set_text(&format!("Choose location of the image folder, use default will create a new dedicated folder in the current directory. Current location: {}", path_str));
         campaign_path.replace(path_str);
-        println!("{}", campaign_path.borrow());
     }));
 
     button_choose_3.connect_clicked(clone!(@strong file_chooser => move |_| file_chooser.set_visible(true)));
