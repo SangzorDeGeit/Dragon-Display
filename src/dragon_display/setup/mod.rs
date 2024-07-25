@@ -26,21 +26,47 @@ pub struct Campaign {
     pub sync_option: SynchronizationOption,
 }
 
+impl Campaign {
+    /// Set the google drive properties of a google drive campaign. When this function is called on
+    /// a non-google-drive campaign, it does nothing.
+    pub fn set_google_drive_fields(&mut self, access_token: String, refresh_token: String, google_drive_sync_folder: String) -> &mut Self {
+        let new_sync_option = SynchronizationOption::GoogleDrive { access_token, refresh_token, google_drive_sync_folder };
+        match self.sync_option {
+            SynchronizationOption::GoogleDrive { .. } => {
+                self.sync_option = new_sync_option;
+                return self;
+            },
+            _ => return self,
+        }
+    }
+
+    /// set_google_drive_fields for just the tokens
+    pub fn set_google_drive_tokens(&mut self, access_token: String, refresh_token: String) -> &mut Self {
+        match &self.sync_option {
+            SynchronizationOption::GoogleDrive { google_drive_sync_folder, .. } => {
+                self.set_google_drive_fields(access_token, refresh_token, google_drive_sync_folder.to_string());
+                return self;
+            },
+            _ => return self,
+        }
+    }
+
+    /// set_google_drive_fields for just the sync_folder
+    pub fn set_google_drive_sync_folder(&mut self, google_drive_sync_folder: String) -> &mut Self {
+        match &self.sync_option {
+            SynchronizationOption::GoogleDrive { access_token, refresh_token, .. } => {
+                self.set_google_drive_fields(access_token.to_string(), refresh_token.to_string(), google_drive_sync_folder);
+                return self;
+            },
+            _ => return self,
+        }
+    }
+}
+
 impl Default for Campaign {
     fn default() -> Self {
         Campaign { name: "".to_string(), path: "".to_string(), 
                 sync_option: SynchronizationOption::None}
-    }
-}
-
-impl Campaign {
-    /// Returns the refresh token, access token, and google drive path of this campaign
-    /// Returns empty string if the campaign is not a google drive campaign
-    pub fn get_google_drive_properties(&self) -> Option<(String, String, String)> {
-        match &self.sync_option {
-            SynchronizationOption::None => None,
-            SynchronizationOption::GoogleDrive { access_token, refresh_token, google_drive_path} => Some((access_token.to_string(), refresh_token.to_string(), google_drive_path.to_string())),
-        }
     }
 }
 
@@ -49,7 +75,7 @@ pub enum SynchronizationOption {
     None,
     GoogleDrive {access_token: String,
                 refresh_token: String,
-                google_drive_path: String},
+                google_drive_sync_folder: String},
 }
 
 /// The messages that the select_campaign_window can send
