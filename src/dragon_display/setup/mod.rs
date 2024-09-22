@@ -1,82 +1,22 @@
-pub mod gui;
 pub mod config;
-pub mod google_drive_sync;
+pub mod google_drive;
+pub mod gui;
+pub mod helper;
+pub mod ui;
 
 use std::io::Error;
 
 use adw::prelude::*;
-use gtk::{glib, ApplicationWindow, Button, Grid, Label};
 use config::{remove_campaign_from_config, write_campaign_to_config};
-use serde::{Serialize, Deserialize};
+use glib::clone;
+use gtk::{glib, ApplicationWindow, Button, Grid, Label};
 
-use gui::{
-    add_campaign_window, remove_campaign_window, select_campaign_window, select_monitor_window
-};
+use config::{Campaign, SynchronizationOption};
 
-/// Structure representing the name of the campaign and the corresponding data
-#[derive(Serialize, Deserialize, Default)]
-struct Config {
-    campaigns: Vec<Campaign>
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Campaign {
-    pub name: String,
-    pub path: String,
-    pub sync_option: SynchronizationOption,
-}
-
-impl Campaign {
-    /// Set the google drive properties of a google drive campaign. When this function is called on
-    /// a non-google-drive campaign, it does nothing.
-    pub fn set_google_drive_fields(&mut self, access_token: String, refresh_token: String, google_drive_sync_folder: String) -> &mut Self {
-        let new_sync_option = SynchronizationOption::GoogleDrive { access_token, refresh_token, google_drive_sync_folder };
-        match self.sync_option {
-            SynchronizationOption::GoogleDrive { .. } => {
-                self.sync_option = new_sync_option;
-                return self;
-            },
-            _ => return self,
-        }
-    }
-
-    /// set_google_drive_fields for just the tokens
-    pub fn set_google_drive_tokens(&mut self, access_token: String, refresh_token: String) -> &mut Self {
-        match &self.sync_option {
-            SynchronizationOption::GoogleDrive { google_drive_sync_folder, .. } => {
-                self.set_google_drive_fields(access_token, refresh_token, google_drive_sync_folder.to_string());
-                return self;
-            },
-            _ => return self,
-        }
-    }
-
-    /// set_google_drive_fields for just the sync_folder
-    pub fn set_google_drive_sync_folder(&mut self, google_drive_sync_folder: String) -> &mut Self {
-        match &self.sync_option {
-            SynchronizationOption::GoogleDrive { access_token, refresh_token, .. } => {
-                self.set_google_drive_fields(access_token.to_string(), refresh_token.to_string(), google_drive_sync_folder);
-                return self;
-            },
-            _ => return self,
-        }
-    }
-}
-
-impl Default for Campaign {
-    fn default() -> Self {
-        Campaign { name: "".to_string(), path: "".to_string(), 
-                sync_option: SynchronizationOption::None}
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum SynchronizationOption {
-    None,
-    GoogleDrive {access_token: String,
-                refresh_token: String,
-                google_drive_sync_folder: String},
-}
+use ui::add_campaign::add_campaign_window;
+use ui::google_drive::{googledrive_connect_window, googledrive_select_path_window};
+use ui::remove_campaign::remove_campaign_window;
+use ui::select_campaign::select_campaign_window;
 
 /// The messages that the select_campaign_window can send
 pub enum SelectMessage {
@@ -86,14 +26,16 @@ pub enum SelectMessage {
     Error { error: Error, fatal: bool },
 }
 
-/// The messages that the add campaign window can send
+/// The messages that the add and remove campaign window can send
 pub enum AddRemoveMessage {
     Campaign { campaign: Campaign },
     Cancel,
     Error { error: Error, fatal: bool },
 }
 
+/// Make and present the window to select a campaign
 pub fn select_campaign(app: &adw::Application) {
+    // This channel lets the frontend(ui) communicate with the manager
     let (sender, receiver) = async_channel::bounded(1);
 
     let window = match select_campaign_window(app, sender) {
@@ -106,7 +48,7 @@ pub fn select_campaign(app: &adw::Application) {
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
-    glib::spawn_future_local(glib::clone!( @weak window, @weak app => async move {
+    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
         while let Ok(message) = receiver.recv().await {
             match message {
                 SelectMessage::Campaign { campaign } => {
@@ -126,6 +68,7 @@ pub fn select_campaign(app: &adw::Application) {
     }));
 }
 
+/// Make and present the window to remove a campaign
 fn remove_campaign(app: &adw::Application) {
     let (sender, receiver) = async_channel::bounded(1);
     let window = match remove_campaign_window(app, sender) {
@@ -138,7 +81,7 @@ fn remove_campaign(app: &adw::Application) {
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
-    glib::spawn_future_local(glib::clone!( @weak window, @weak app => async move {
+    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
         while let Ok(message) = receiver.recv().await {
             match message {
                 AddRemoveMessage::Campaign { campaign } => {
@@ -159,6 +102,7 @@ fn remove_campaign(app: &adw::Application) {
     }));
 }
 
+/// Make and present the window to add a campaign
 fn add_campaign(app: &adw::Application) {
     let (sender, receiver) = async_channel::bounded(1);
     let window = match add_campaign_window(app, sender) {
@@ -171,16 +115,15 @@ fn add_campaign(app: &adw::Application) {
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
-    glib::spawn_future_local(glib::clone!( @weak window, @weak app => async move {
+    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
         while let Ok(message) = receiver.recv().await {
             match message {
                 AddRemoveMessage::Campaign { campaign } => {
                     window.destroy();
-                    match write_campaign_to_config(campaign) {
-                        Ok(_) => (),
-                        Err(e) => handle_setup_error(&app, e, false),
+                    match campaign.sync_option {
+                        SynchronizationOption::None => write_campaign(&app, campaign),
+                        SynchronizationOption::GoogleDrive {..} => googledrive_connect(&app, campaign),
                     }
-                    select_campaign(&app);
                 }
                 AddRemoveMessage::Cancel => {
                     window.destroy();
@@ -192,11 +135,79 @@ fn add_campaign(app: &adw::Application) {
     }));
 }
 
+/// Call config processes to add a campaign to the config file
+pub fn write_campaign(app: &adw::Application, campaign: Campaign) {
+    match write_campaign_to_config(campaign) {
+        Ok(_) => (),
+        Err(e) => handle_setup_error(&app, e, false),
+    }
+    select_campaign(&app);
+}
+
+/// Make and present the window to connect to google drive
+pub fn googledrive_connect(app: &adw::Application, campaign: Campaign) {
+    let (sender, receiver) = async_channel::bounded(1);
+    let window = match googledrive_connect_window(app, campaign, sender, false) {
+        Ok(w) => w,
+        Err(error) => {
+            handle_setup_error(app, error, true);
+            return;
+        }
+    };
+    window.present();
+
+    glib::spawn_future_local(clone!(@weak window, @weak app => async move {
+        while let Ok(message) = receiver.recv().await {
+            match message {
+                AddRemoveMessage::Campaign { campaign } => {
+                    window.destroy();
+                    googledrive_select_path(&app, campaign);
+                }
+                AddRemoveMessage::Cancel => {
+                    window.destroy();
+                    select_campaign(&app);
+                }
+                AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
+            }
+        }
+    }));
+}
+
+/// Make and present the window to select a synchronization folder in google drive
+pub fn googledrive_select_path(app: &adw::Application, campaign: Campaign) {
+    let (sender, receiver) = async_channel::bounded(1);
+    let window = match googledrive_select_path_window(app, campaign, sender) {
+        Ok(w) => w,
+        Err(error) => {
+            handle_setup_error(app, error, true);
+            return;
+        }
+    };
+    window.present();
+
+    glib::spawn_future_local(clone!(@weak window, @weak app => async move {
+        while let Ok(message) = receiver.recv().await {
+            match message {
+                AddRemoveMessage::Campaign { campaign } => {
+                    window.destroy();
+                    write_campaign(&app, campaign);
+                }
+                AddRemoveMessage::Cancel => {
+                    window.destroy();
+                    select_campaign(&app);
+                }
+                AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
+            }
+        }
+    }));
+}
+
 pub async fn start_dragon_display(app: &adw::Application, campaign: Campaign) {
     // let monitor = select_monitor_window(&app);
     //checks if images need to be synchronized
     //starts the main application control panel
     //starts the main application image displayer
+    todo!();
 }
 
 /// Function that produces proper error messages (dialogs) based on errors that are given
@@ -241,7 +252,6 @@ pub fn handle_setup_error(app: &adw::Application, error: Error, fatal: bool) {
             app.quit();
         }
     }));
-
 
     window.present();
 }

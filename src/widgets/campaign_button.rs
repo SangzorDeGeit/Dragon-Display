@@ -1,21 +1,24 @@
-use gtk::{glib,subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt}};
 use async_channel::Sender;
+use gtk::{
+    glib,
+    subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
+};
+use std::cell::RefCell;
 use std::fs;
-use std::cell::RefCell; 
 use std::io::{Error, ErrorKind};
 
-use crate::dragon_display::setup::Campaign;
+use crate::dragon_display::setup::config::Campaign;
 use crate::dragon_display::setup::SelectMessage;
 
-use gtk::subclass::prelude::*;
 use gtk::prelude::*;
+use gtk::subclass::prelude::*;
 
 mod imp {
 
     use super::*;
     // Object holding the campaign
     #[derive(Default)]
-    pub struct CampaignButton{
+    pub struct CampaignButton {
         pub campaign: RefCell<Campaign>,
         // We make this an option so that the default trait is implemented
         // We should panic if the Option is None (the sender is not set)
@@ -50,18 +53,27 @@ mod imp {
                         .borrow()
                         .clone()
                         .unwrap()
-                        .send_blocking(SelectMessage::Campaign { campaign: c }).expect("Channel closed");
-                },
+                        .send_blocking(SelectMessage::Campaign { campaign: c })
+                        .expect("Channel closed");
+                }
                 Err(_) => {
-                    let _ = self.sender
+                    let _ = self
+                        .sender
                         .borrow()
                         .clone()
                         .unwrap()
-                        .send_blocking(SelectMessage::Error { error: Error::new(ErrorKind::Other, "An error occured while trying to create the folder for images"), fatal: true }).expect("Channel closed");
+                        .send_blocking(SelectMessage::Error {
+                            error: Error::new(
+                                ErrorKind::Other,
+                                "An error occured while trying to create the folder for images",
+                            ),
+                            fatal: true,
+                        })
+                        .expect("Channel closed");
                 }
             }
         }
-}
+    }
 }
 
 glib::wrapper! {
@@ -82,8 +94,6 @@ impl CampaignButton {
         imp.campaign.replace(campaign);
         imp.sender.replace(sender);
 
-        
         object
-
     }
 }

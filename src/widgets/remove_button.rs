@@ -1,17 +1,20 @@
-use std::cell::RefCell;
-use gtk::{glib,subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt}};
 use async_channel::Sender;
+use gtk::{
+    glib,
+    subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
+};
+use std::cell::RefCell;
 
-use crate::dragon_display::setup::Campaign;
+use crate::dragon_display::setup::config::Campaign;
 
-use gtk::subclass::prelude::*;
 use gtk::prelude::*;
+use gtk::subclass::prelude::*;
 
 mod imp {
     use super::*;
     // Object holding the campaign
     #[derive(Default)]
-    pub struct RemoveButton{
+    pub struct RemoveButton {
         pub campaign: RefCell<Campaign>,
         // We make this an option so that the default trait is implemented
         // We should panic if the Option is None (the sender is not set)
@@ -24,7 +27,6 @@ mod imp {
         const NAME: &'static str = "DragonDisplayRemoveButton";
         type Type = super::RemoveButton;
         type ParentType = gtk::Button;
-
     }
 
     // Trait shared by all GObjects
@@ -40,16 +42,17 @@ mod imp {
     // Trait shared by all buttons
     impl ButtonImpl for RemoveButton {
         fn clicked(&self) {
-                let c = self.campaign.borrow().to_owned();
-                let _ = self.sender
-                    .borrow()
-                    .clone()
-                    .unwrap()
-                    .send_blocking(c).expect("Channel closed");
+            let c = self.campaign.borrow().to_owned();
+            let _ = self
+                .sender
+                .borrow()
+                .clone()
+                .unwrap()
+                .send_blocking(c)
+                .expect("Channel closed");
         }
     }
 }
-
 
 glib::wrapper! {
     pub struct RemoveButton(ObjectSubclass<imp::RemoveButton>)
