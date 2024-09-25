@@ -8,7 +8,7 @@ use std::{
 };
 use toml::to_string;
 
-const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
+pub const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH: u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 pub const SYNCHRONIZATION_OPTIONS: [&str; 2] = ["None", "Google Drive"];
@@ -80,15 +80,16 @@ pub fn read_campaign_from_config() -> Result<Vec<Campaign>, Error> {
     Ok(config.campaigns)
 }
 
-/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file.
+/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path
 pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error> {
     let config_item = Config {
-        campaigns: vec![campaign],
+        campaigns: vec![campaign.clone()],
     };
 
     let mut config_file = get_campaign_config(Operation::APPEND)?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
+    fs::create_dir_all(campaign.path)?;
     Ok(())
 }
 

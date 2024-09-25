@@ -4,7 +4,7 @@ use gtk::{glib, gio, ApplicationWindow, Button, Grid, Label, ScrolledWindow, Lis
 
 use super::CustomMargin;
 use crate::dragon_display::setup::config::{Campaign, SynchronizationOption};
-use crate::dragon_display::setup::google_drive::{initialize_client, InitializeMessage, get_folder_tree, get_folder_amount, FolderResult};
+use crate::dragon_display::setup::google_drive::{get_folder_amount, get_folder_tree, initialize_client, synchronize_files, FolderResult, InitializeMessage};
 use crate::dragon_display::setup::AddRemoveMessage;
 use crate::widgets::google_folder_object::GoogleFolderObject;
 use crate::runtime;
@@ -14,6 +14,7 @@ use std::io::{Error, ErrorKind};
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
+
 // The frontend directly comminucates with the backend to reduce the amount of channels created. The manager simply gets a signal from the
 // frontend when the adding process fails or succeeeds
 pub enum GdBackendToFrondend {
@@ -38,17 +39,13 @@ pub fn googledrive_connect_window(
     sender: Sender<AddRemoveMessage>,
     reconnect: bool,
 ) -> Result<ApplicationWindow, Error> {
+    // ui elements
     let message: &str;
     if reconnect {
         message = "Google Drive session is expired, please reconnect to continue using google drive synchronization.";
     } else {
         message = "In order to use Google Drive synchronization you need to give Dragon-Display permission to connect to your Google Account";
     }
-
-    let google_drive_folder = match campaign.clone().sync_option {
-        SynchronizationOption::GoogleDrive { google_drive_sync_folder: gd_sync_folder, ..} => gd_sync_folder,
-        _ => return Err(Error::new(ErrorKind::InvalidInput, "A non-google-drive campaign has been inputted to a function for google-drive synchronization campaigns (connect_google_drive_window)")),
-    };
 
     let label = Label::builder().label(message).wrap(true).build();
     label.set_margin_all(6);
@@ -71,6 +68,12 @@ pub fn googledrive_connect_window(
     container.attach(&label, 0, 0, 2, 1);
     container.attach(&button_connect, 1, 2, 1, 1);
     container.attach(&button_cancel, 0, 2, 1, 1);
+
+    // ui logic
+    let google_drive_folder = match campaign.clone().sync_option {
+        SynchronizationOption::GoogleDrive { google_drive_sync_folder: gd_sync_folder, ..} => gd_sync_folder,
+        _ => return Err(Error::new(ErrorKind::InvalidInput, "A non-google-drive campaign has been inputted to a function for google-drive synchronization campaigns (googledrive_connect_window)")),
+    };
 
     let (server_terminator_sender, server_terminator_receiver) = async_channel::bounded(1);
 
@@ -147,6 +150,7 @@ pub fn googledrive_select_path_window(
     campaign: Campaign,
     sender: Sender<AddRemoveMessage>,
 ) -> Result<ApplicationWindow, Error> {
+    // ui elements
     let container = Grid::new();
     let window = ApplicationWindow::builder()
         .application(app)
@@ -187,13 +191,13 @@ pub fn googledrive_select_path_window(
         .build();
     label_selection.set_margin_all(6);
 
-
     container.attach(&label, 0, 0, 2, 1);
     container.attach(&label_selection, 0, 1, 2, 1);
     container.attach(&button_cancel, 0, 4, 1, 1);
     container.attach(&button_refresh, 0, 3, 2, 1);
     container.attach(&button_choose, 1, 4, 1, 1);
 
+    // ui logic
     label_selection.set_label("My Drive");
     label.set_label("Select a folder where Dragon-Display will download the images from. Current folder: ");
 
@@ -209,7 +213,7 @@ pub fn googledrive_select_path_window(
     create_tree_widget(access_token, refresh_token, widget_sender.clone(), sender.clone());
     button_refresh.set_sensitive(false);
     // await messages from the tree widget creator
-    glib::spawn_future_local(clone!(@strong current_id, @strong new_access_token, @strong new_refresh_token, @weak button_refresh, @weak button_choose => async move {
+    spawn_future_local(clone!(@strong current_id, @strong new_access_token, @strong new_refresh_token, @weak button_refresh, @weak button_choose => async move {
         while let Ok(message) = widget_receiver.recv().await {
             match message {
                 TreeWidgetMessage::ProgressBar { progressbar } => {
@@ -282,7 +286,7 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
     let new_refresh_token = Rc::new(RefCell::new(refresh_token.clone()));
 
     // Update the progress bar
-    glib::spawn_future_local(clone!(@strong progress_bar, @strong widget_sender => async move {
+    spawn_future_local(clone!(@strong progress_bar, @strong widget_sender => async move {
         while let Ok(amount) = update_progressbar_receiver.recv().await {
             match amount {
                 FolderAmount::Total { amount } => {
@@ -307,7 +311,7 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
     let (foldertree_sender, foldertree_receiver) = async_channel::unbounded::<FolderResult>();
 
     // Await a message from the async thread that reqeusts folders
-    glib::spawn_future_local(clone!(@strong new_access_token, @strong new_refresh_token, @strong widget_sender => async move {
+    spawn_future_local(clone!(@strong new_access_token, @strong new_refresh_token, @strong widget_sender => async move {
         while let Ok(result) = foldertree_receiver.recv().await {
             new_access_token.replace(result.access_token);
             new_refresh_token.replace(result.refresh_token);
@@ -448,3 +452,71 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
         foldertree_sender.send_blocking(result).expect("Channel closed");
     });
 }
+
+pub fn googledrive_synchronize_window(app: &adw::Application, campaign: Campaign, sender: Sender<Result<(Campaign, Vec<String>), Error>>) -> ApplicationWindow {
+    // ui element
+    let container = Box::new(gtk::Orientation::Vertical, 6);
+
+    let progressbar = ProgressBar::builder()
+        .fraction(0.0)
+        .show_text(true)
+        .build();
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Dragon-Display")
+        .child(&container)
+        .build();
+
+    container.append(&progressbar);
+
+    // ui logic 
+    let (sync_sender, sync_receiver) = async_channel::bounded::<(Campaign, Vec<String>)>(1);
+    let (update_progress_sender, update_progress_receiver) = async_channel::unbounded();
+
+    spawn_future_local(clone!(@strong sender, @strong campaign => async move {
+        while let Ok(message) = sync_receiver.recv().await {
+            sender.send_blocking(Ok((message.0, message.1))).expect("Channel closed");
+        }
+    }));
+
+    let mut total = 1.0;
+    let mut current = 0.0;
+
+    spawn_future_local(async move {
+        while let Ok(message) = update_progress_receiver.recv().await {
+            match message {
+                FolderAmount::Total { amount } => {
+                    if amount > 0 {
+                        total = amount as f64;
+                    }
+                },
+                FolderAmount::Current { amount } => {
+                    let new_current = current + amount as f64;
+                    if  new_current <= total {
+                        current = new_current;
+                    } else {
+                        current = total;
+                    }
+                },
+            }
+            progressbar.set_text(Some(&format!("Downloading files: {}/{}", current, total)));
+            let new_fraction = current/total;
+            progressbar.set_fraction(new_fraction);
+        }
+    });
+
+    runtime().spawn(async move {
+        let (campaign, failed_files) = match synchronize_files(campaign, update_progress_sender).await {
+            Ok((c, f)) => (c, f),
+            Err(e) => {
+                sender.send_blocking(Err(e)).expect("Channel closed");
+                return;
+            },
+        };
+
+        sync_sender.send_blocking((campaign, failed_files)).expect("Channel closed");
+    });
+
+    window
+} 

@@ -1,20 +1,26 @@
 // File containing functions for google drive synchronizing functionality
 use async_recursion::async_recursion;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use google_drive::{AccessToken, Client};
+use google_drive::{traits::FileOps, AccessToken, Client};
+use reqwest::blocking::Client as ReqwestClient;
 use rouille::{Response, Server};
 use std::{
     collections::HashMap,
     env,
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     io::{self, Error, ErrorKind, Read},
     sync::mpsc,
 };
+use tokio::fs::File;
+use tokio::io::copy;
 
 use gtk::glib::{clone, spawn_future};
 
-use super::config::Campaign;
+use crate::dragon_display::setup::remove_campaign;
+
+use super::config::{Campaign, SynchronizationOption, IMAGE_EXTENSIONS};
 use super::ui::google_drive::FolderAmount;
+
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
 pub enum InitializeMessage {
@@ -230,7 +236,7 @@ pub async fn get_folder_tree(
 
     configure_environment()?;
     let mut access_token = folder_result.access_token.clone();
-    let mut refresh_token = folder_result.refresh_token.clone();
+    let refresh_token = folder_result.refresh_token.clone();
 
     let query = format!(
         "mimeType = 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
@@ -240,7 +246,6 @@ pub async fn get_folder_tree(
     // reconnect and try the query again. If it does not work a second time it will fail
     for i in 0..2 {
         let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
-        google_drive_client.set_auto_access_token_refresh(true);
         let request = google_drive_client
             .files()
             .list_all(
@@ -252,15 +257,13 @@ pub async fn get_folder_tree(
             Ok(r) => r,
             Err(_) => {
                 if i == 0 {
-                    (access_token, refresh_token) =
-                        refresh_client(&access_token, &refresh_token).await?;
+                    access_token = refresh_client(&access_token, &refresh_token).await?;
                     continue;
                 } else {
-                    break;
+                    return Err(Error::from(ErrorKind::ConnectionRefused));
                 }
             }
         };
-
         let mut id_name_map = folder_result.id_name_map.clone();
         let mut children: Vec<String> = Vec::new();
         for file in response.body {
@@ -302,14 +305,13 @@ pub async fn get_folder_amount(
 ) -> Result<(usize, String, String), Error> {
     configure_environment()?;
     let mut access_token = access_token;
-    let mut refresh_token = refresh_token;
+    let refresh_token = refresh_token;
 
     let query = format!("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     // Try the query maximum twice: if the first request does not get a response we try to
     // reconnect and try the query again. If it does not work a second time it will fail
     for i in 0..2 {
         let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
-        google_drive_client.set_auto_access_token_refresh(true);
         let request = google_drive_client
             .files()
             .list_all(
@@ -321,11 +323,10 @@ pub async fn get_folder_amount(
             Ok(r) => r,
             Err(_) => {
                 if i == 0 {
-                    (access_token, refresh_token) =
-                        refresh_client(&access_token, &refresh_token).await?;
+                    access_token = refresh_client(&access_token, &refresh_token).await?;
                     continue;
                 } else {
-                    break;
+                    return Err(Error::from(ErrorKind::ConnectionRefused));
                 }
             }
         };
@@ -338,9 +339,169 @@ pub async fn get_folder_amount(
     ));
 }
 
-/// Downloads the files from google drive to the designated folder
-pub fn sync_drive(campaign: Campaign) -> Result<(String, String), io::Error> {
-    todo!();
+/// Checks which files need to be downloaded from the drive and downloads them to the designated
+/// folder. Removes files in the designated folder that are not in the drive.
+/// Returns updated campaign with the amount of files that could not be downloaded or an error
+pub async fn synchronize_files(
+    campaign: Campaign,
+    sender: async_channel::Sender<FolderAmount>,
+) -> Result<(Campaign, Vec<String>), io::Error> {
+    configure_environment()?;
+    let (mut access_token, refresh_token, google_drive_sync_folder) = match campaign.sync_option {
+        SynchronizationOption::GoogleDrive {
+            access_token,
+            refresh_token,
+            google_drive_sync_folder,
+        } => (access_token, refresh_token, google_drive_sync_folder),
+        _ => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Called download from drive for a non-googledrive campaign",
+            ))
+        }
+    };
+    let campaign_path = fs::read_dir(&campaign.path)?;
+    let mut campaign_files = Vec::new();
+    for file in campaign_path {
+        campaign_files.push(
+            file?
+                .file_name()
+                .to_str()
+                .expect("could not convert osString to &str")
+                .to_string(),
+        );
+    }
+
+    let mut drive_files = HashMap::new();
+
+    let query = format!(
+        "mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
+        google_drive_sync_folder
+    );
+    let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
+    for i in 0..2 {
+        let request = google_drive_client
+            .files()
+            .list_all(
+                "user", "", false, "", false, "name", &query, "", false, false, "",
+            )
+            .await;
+
+        println!("Reading the files");
+        let response = match request {
+            Ok(r) => r,
+            Err(_) => {
+                if i == 0 {
+                    access_token = refresh_client(&access_token, &refresh_token).await?;
+                    continue;
+                } else {
+                    return Err(Error::from(ErrorKind::ConnectionRefused));
+                }
+            }
+        };
+        for file in response.body {
+            let file_extension = file.name.split('.').last().unwrap_or("");
+            if IMAGE_EXTENSIONS.contains(&file_extension) {
+                drive_files.insert(file.name, file.id);
+            }
+        }
+        break;
+    }
+    sender
+        .send_blocking(FolderAmount::Total {
+            amount: drive_files.len(),
+        })
+        .expect("Channel closed");
+    let mut current: usize = 0;
+    // vector containing all 'file names' that need to be removed from the campaign path folder
+    let mut remove_files = Vec::new();
+    // vector containing all 'drive file ids' that need to be downloaded
+    let mut download_files = HashMap::new();
+
+    for file in &campaign_files {
+        if drive_files.contains_key(file) {
+            current += 1;
+        } else {
+            remove_files.push(file);
+        }
+    }
+    for file in &drive_files {
+        if !campaign_files.contains(file.0) {
+            download_files.insert(file.0, file.1);
+        }
+    }
+    sender
+        .send_blocking(FolderAmount::Current { amount: current })
+        .expect("Channel closed");
+
+    for file in remove_files {
+        match fs::remove_file(format!("{}/{}", campaign.path, file)) {
+            Ok(_) => (),
+            Err(e) => {
+                return Err(Error::new(
+                    e.kind(),
+                    format!("Could not remove file: {}", file),
+                ))
+            }
+        };
+    }
+
+    let mut failed_files = Vec::new();
+    for (file_name, file_id) in download_files {
+        for i in 0..2 {
+            let download_url = format!(
+                "https://www.googleapis.com/drive/v3/files/{}?alt=media",
+                file_id
+            );
+            println!("Downloading the files");
+            let reqwest_client = ReqwestClient::new();
+            let response = reqwest_client
+                .get(&download_url)
+                .bearer_auth(&access_token)
+                .send();
+
+            let response = match response {
+                Ok(r) => r,
+                Err(_) => {
+                    if i == 0 {
+                        access_token = refresh_client(&access_token, &refresh_token).await?;
+                        continue;
+                    } else {
+                        return Err(Error::from(ErrorKind::ConnectionRefused));
+                    }
+                }
+            };
+            let mut destination = File::create(format!("{}/{}", campaign.path, file_name)).await?;
+            let response = match response.bytes() {
+                Ok(r) => r,
+                Err(_) => {
+                    failed_files.push(file_name.to_string());
+                    continue;
+                }
+            };
+
+            if let Err(_) = copy(&mut response.as_ref(), &mut destination).await {
+                failed_files.push(file_name.to_string());
+                continue;
+            }
+
+            sender
+                .send_blocking(FolderAmount::Current { amount: 1 })
+                .expect("Channel closed");
+            break;
+        }
+    }
+    let new_campaign = Campaign {
+        name: campaign.name,
+        path: campaign.path,
+        sync_option: SynchronizationOption::GoogleDrive {
+            access_token,
+            refresh_token,
+            google_drive_sync_folder,
+        },
+    };
+
+    return Ok((new_campaign, failed_files));
 }
 
 /// Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
@@ -380,17 +541,21 @@ fn configure_environment() -> Result<(), io::Error> {
 }
 
 // takes in an old refresh and access token and returns a new one;
-async fn refresh_client(
-    access_token: &str,
-    refresh_token: &str,
-) -> Result<(String, String), Error> {
+async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
+    println!("{}, {}", access_token, refresh_token);
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 
     let token = match token {
         Ok(t) => t,
-        Err(_) => todo!("There should be some re-initialization here"),
+        Err(_) => {
+            println!("Connection refused indeed");
+            return Err(Error::new(
+                ErrorKind::ConnectionRefused,
+                "Re-authentication required",
+            ));
+        }
     };
 
-    return Ok((token.access_token, token.refresh_token));
+    return Ok(token.access_token);
 }
