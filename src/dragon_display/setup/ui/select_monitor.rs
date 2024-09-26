@@ -1,9 +1,16 @@
+use std::io::{Error, ErrorKind};
+
 // packages for gui
 use adw::prelude::*;
+use async_channel::Sender;
+use gdk4::{Display, Monitor};
 use glib::clone;
 use gtk::{glib, ApplicationWindow, Button, Grid, Label};
 
-pub fn select_monitor_window(app: &adw::Application) {
+pub fn select_monitor_window(
+    app: &adw::Application,
+    sender: Sender<Monitor>,
+) -> Result<ApplicationWindow, Error> {
     let container = Grid::new();
     let window = ApplicationWindow::builder()
         .application(app)
@@ -19,16 +26,21 @@ pub fn select_monitor_window(app: &adw::Application) {
         .margin_bottom(6)
         .build();
 
-    let display = match gdk4::Display::default() {
+    let display = match Display::default() {
         Some(d) => d,
-        None => todo!(),
+        None => {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                "Could not find any displays",
+            ))
+        }
     };
 
     let mut i: u32 = 0;
     while let Some(monitor) = display.monitors().item(i) {
         let monitor = monitor
             .to_value()
-            .get::<gdk4::Monitor>()
+            .get::<Monitor>()
             .expect("Value needs to be monitor");
 
         let monitor_button = Button::builder()
@@ -46,14 +58,18 @@ pub fn select_monitor_window(app: &adw::Application) {
             .margin_bottom(6)
             .build();
 
-        monitor_button.connect_clicked(clone!(@strong window => move |_| {
-            window.destroy();
-            todo!("Send the monitor to the manager");
+        monitor_button.connect_clicked(clone!(@strong sender, @weak monitor => move |_| {
+            sender.send_blocking(monitor).expect("Channel closed");
         }));
 
         let column = match i32::try_from(i) {
             Ok(c) => c,
-            Err(_) => todo!("break here and display an error message (too many monitors)"),
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::OutOfMemory,
+                    "Found to many monitors?",
+                ))
+            }
         };
         container.attach(&monitor_button, column, 1, 1, 1);
 
@@ -61,7 +77,12 @@ pub fn select_monitor_window(app: &adw::Application) {
     }
     let monitor_amount = match i32::try_from(i) {
         Ok(c) => c,
-        Err(_) => todo!("break here and display an error message (too many monitors)"),
+        Err(_) => {
+            return Err(Error::new(
+                ErrorKind::OutOfMemory,
+                "Too many monitors found",
+            ));
+        }
     };
     if monitor_amount == 0 {
         label.set_text("Could not detect any monitors");
@@ -72,5 +93,5 @@ pub fn select_monitor_window(app: &adw::Application) {
         container.attach(&label, (monitor_amount - 1) / 2, 0, 2, 1);
     }
 
-    window.present();
+    Ok(window)
 }

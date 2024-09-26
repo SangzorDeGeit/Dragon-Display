@@ -1,7 +1,5 @@
 pub mod config;
 pub mod google_drive;
-pub mod gui;
-pub mod helper;
 pub mod ui;
 
 use std::fs;
@@ -10,16 +8,21 @@ use std::io::{Error, ErrorKind};
 use adw::prelude::*;
 use config::{remove_campaign_from_config, write_campaign_to_config};
 use glib::clone;
-use gtk::{glib, ApplicationWindow, Button, Grid, Label};
+use gtk::glib;
+use gtk::glib::spawn_future_local;
 
 use config::{Campaign, SynchronizationOption};
 
 use ui::add_campaign::add_campaign_window;
+use ui::error::handle_setup_error;
 use ui::google_drive::{
     googledrive_connect_window, googledrive_select_path_window, googledrive_synchronize_window,
 };
 use ui::remove_campaign::remove_campaign_window;
 use ui::select_campaign::select_campaign_window;
+use ui::select_monitor::select_monitor_window;
+
+use crate::dragon_display::main_program::start_dragon_display;
 
 /// The messages that the select_campaign_window can send
 pub enum SelectMessage {
@@ -191,11 +194,6 @@ pub fn googledrive_connect(
                 }
                 AddRemoveMessage::Cancel => {
                     window.destroy();
-                    match calling_function {
-                        CallingFunction::AddCampaign => select_campaign(&app),
-                        CallingFunction::SelectPath => select_campaign(&app),
-                        CallingFunction::Synchronize => googledrive_synchronize(&app, campaign.clone()),
-                    }
                 }
                 AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
             }
@@ -278,57 +276,20 @@ fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
 }
 
 fn select_monitor(app: &adw::Application, campaign: Campaign) {
-    todo!("Show monitor buttons");
-}
-
-pub async fn start_dragon_display(app: &adw::Application, campaign: Campaign) {
-    //starts the main application control panel
-    //starts the main application image displayer
-    todo!();
-}
-
-/// Function that produces proper error messages (dialogs) based on errors that are given
-pub fn handle_setup_error(app: &adw::Application, error: Error, fatal: bool) {
-    let msg = error.to_string();
-
-    let container = Grid::new();
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .modal(true)
-        .deletable(false)
-        .child(&container)
-        .build();
-
-    if fatal {
-        window.set_title(Some("Dragon-Display fatal error!"));
-    } else {
-        window.set_title(Some("Dragon-Display error!"));
-    }
-
-    let label = Label::builder()
-        .label(&msg)
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
-    let button_ok = Button::builder()
-        .label("Ok")
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(6)
-        .margin_end(6)
-        .build();
-
-    container.attach(&label, 0, 0, 1, 1);
-    container.attach(&button_ok, 0, 1, 1, 1);
-
-    button_ok.connect_clicked(glib::clone!(@strong app, @strong window => move |_| {
-        window.destroy();
-        if fatal {
-            app.quit();
+    let (sender, receiver) = async_channel::bounded(1);
+    let window = match select_monitor_window(app, sender) {
+        Ok(w) => w,
+        Err(e) => {
+            handle_setup_error(&app, e, true);
+            return;
         }
-    }));
-
+    };
     window.present();
+
+    spawn_future_local(clone!(@weak window, @weak app => async move {
+        while let Ok(monitor) = receiver.recv().await {
+            window.destroy();
+            start_dragon_display(&app, campaign.clone(), monitor);
+        };
+    }));
 }

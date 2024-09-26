@@ -1,7 +1,7 @@
 // File containing functions for google drive synchronizing functionality
 use async_recursion::async_recursion;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use google_drive::{traits::FileOps, AccessToken, Client};
+use google_drive::{AccessToken, Client};
 use reqwest::blocking::Client as ReqwestClient;
 use rouille::{Response, Server};
 use std::{
@@ -15,8 +15,6 @@ use tokio::fs::File;
 use tokio::io::copy;
 
 use gtk::glib::{clone, spawn_future};
-
-use crate::dragon_display::setup::remove_campaign;
 
 use super::config::{Campaign, SynchronizationOption, IMAGE_EXTENSIONS};
 use super::ui::google_drive::FolderAmount;
@@ -245,7 +243,7 @@ pub async fn get_folder_tree(
     // Try the query maximum twice: if the first request does not get a response we try to
     // reconnect and try the query again. If it does not work a second time it will fail
     for i in 0..2 {
-        let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
+        let google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
         let request = google_drive_client
             .files()
             .list_all(
@@ -311,7 +309,7 @@ pub async fn get_folder_amount(
     // Try the query maximum twice: if the first request does not get a response we try to
     // reconnect and try the query again. If it does not work a second time it will fail
     for i in 0..2 {
-        let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
+        let google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
         let request = google_drive_client
             .files()
             .list_all(
@@ -378,7 +376,7 @@ pub async fn synchronize_files(
         "mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
         google_drive_sync_folder
     );
-    let mut google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
+    let google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
     for i in 0..2 {
         let request = google_drive_client
             .files()
@@ -387,7 +385,6 @@ pub async fn synchronize_files(
             )
             .await;
 
-        println!("Reading the files");
         let response = match request {
             Ok(r) => r,
             Err(_) => {
@@ -453,7 +450,6 @@ pub async fn synchronize_files(
                 "https://www.googleapis.com/drive/v3/files/{}?alt=media",
                 file_id
             );
-            println!("Downloading the files");
             let reqwest_client = ReqwestClient::new();
             let response = reqwest_client
                 .get(&download_url)
@@ -542,14 +538,12 @@ fn configure_environment() -> Result<(), io::Error> {
 
 // takes in an old refresh and access token and returns a new one;
 async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
-    println!("{}, {}", access_token, refresh_token);
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 
     let token = match token {
         Ok(t) => t,
         Err(_) => {
-            println!("Connection refused indeed");
             return Err(Error::new(
                 ErrorKind::ConnectionRefused,
                 "Re-authentication required",
