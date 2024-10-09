@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding=""?>
+<!DOCTYPE xml>
+<schemalist>
+    <schema id="com.github.SangzorDeGeit.Dragon-Display"
+        path="/com/github/SangzorDeGeid/Dragon-Display/">
+        <key name="imagegrid-column-amount" type="i">
+            <default>5</default>
+            <summary>Default amount of columns to in the image page for the control panel</summary>
+        </key>
+        <key name="imagegrid-row-amount" type="i">
+            <default>5</default>
+            <summary>Default amount of rows to in the image page for the control panel</summary>
+        </key>
+    </schema>
+</schemalist>
+

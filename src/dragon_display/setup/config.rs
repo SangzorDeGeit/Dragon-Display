@@ -32,6 +32,83 @@ pub struct Campaign {
     pub sync_option: SynchronizationOption,
 }
 
+impl Campaign {
+    pub fn new(name: String, path: String) -> Self {
+        Self {
+            name,
+            path,
+            sync_option: SynchronizationOption::None,
+        }
+    }
+
+    pub fn new_googledrive(
+        name: String,
+        path: String,
+        access_token: String,
+        refresh_token: String,
+        google_drive_sync_folder: String,
+    ) -> Self {
+        Self {
+            name,
+            path,
+            sync_option: SynchronizationOption::GoogleDrive {
+                access_token,
+                refresh_token,
+                google_drive_sync_folder,
+            },
+        }
+    }
+
+    /// Updates the tokens returns a new instance of the campaign
+    /// Can only be used for a googledrive campaign
+    pub fn update_tokens(&self, access_token: String, refresh_token: String) -> Self {
+        assert!(
+            matches!(self.sync_option, SynchronizationOption::GoogleDrive { .. }),
+            "Update tokens called for a non-googledrive-campaign"
+        );
+        match &self.sync_option {
+            SynchronizationOption::None => self.to_owned(),
+            SynchronizationOption::GoogleDrive {
+                google_drive_sync_folder,
+                ..
+            } => Self {
+                name: self.name.clone(),
+                path: self.path.clone(),
+                sync_option: SynchronizationOption::GoogleDrive {
+                    access_token,
+                    refresh_token,
+                    google_drive_sync_folder: google_drive_sync_folder.to_string(),
+                },
+            },
+        }
+    }
+
+    /// Returns all data of the campaign
+    /// returns empty strings if the data is not applicable
+    pub fn get_campaign_data(&self) -> (String, String, String, String, String) {
+        match &self.sync_option {
+            SynchronizationOption::None => (
+                self.name.to_string(),
+                self.path.to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ),
+            SynchronizationOption::GoogleDrive {
+                access_token,
+                refresh_token,
+                google_drive_sync_folder,
+            } => (
+                self.name.to_string(),
+                self.path.to_string(),
+                access_token.to_string(),
+                refresh_token.to_string(),
+                google_drive_sync_folder.to_string(),
+            ),
+        }
+    }
+}
+
 impl Default for Campaign {
     fn default() -> Self {
         Campaign {
@@ -50,6 +127,12 @@ pub enum SynchronizationOption {
         refresh_token: String,
         google_drive_sync_folder: String,
     },
+}
+
+impl Default for SynchronizationOption {
+    fn default() -> Self {
+        SynchronizationOption::None
+    }
 }
 
 /// Tries to read the campaign configurations from the config file and puts them in a Vector.
@@ -80,12 +163,15 @@ pub fn read_campaign_from_config() -> Result<Vec<Campaign>, Error> {
     Ok(config.campaigns)
 }
 
-/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path
+/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
 pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error> {
     let config_item = Config {
         campaigns: vec![campaign.clone()],
     };
-
+    // if it exists we want to remove it to add the updated version
+    if campaign_exists(&campaign)? {
+        remove_campaign_from_config(campaign.clone(), false)?;
+    }
     let mut config_file = get_campaign_config(Operation::APPEND)?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
@@ -94,7 +180,10 @@ pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error> {
 }
 
 /// Given an existing campaign name this function will remove this campaign and all the campaigndata from the config file.
-pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> {
+pub fn remove_campaign_from_config(
+    campaign: Campaign,
+    remove_folder: bool,
+) -> Result<(), io::Error> {
     check_save_removal(&campaign.path)?;
     let campaign_list = read_campaign_from_config()?;
 
@@ -105,7 +194,9 @@ pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> 
         ));
     }
     if campaign_list.len() == 1 {
-        remove_dir_all(&campaign.path).unwrap_or(());
+        if remove_folder {
+            remove_dir_all(&campaign.path).unwrap_or(());
+        }
         return remove_campaign_config();
     }
 
@@ -132,8 +223,21 @@ pub fn remove_campaign_from_config(campaign: Campaign) -> Result<(), io::Error> 
     let mut config_file = get_campaign_config(Operation::WRITE)?;
     let toml_string = to_string(&config_item).unwrap();
     config_file.write_all(toml_string.as_bytes())?;
-    remove_dir_all(&campaign.path).unwrap_or(());
+    if remove_folder {
+        remove_dir_all(&campaign.path).unwrap_or(());
+    }
     Ok(())
+}
+
+/// Given a campaign, this function will return whether this campaign exists in the config file
+fn campaign_exists(campaign: &Campaign) -> Result<bool, io::Error> {
+    let campaign_list = read_campaign_from_config()?;
+    for c in campaign_list {
+        if c.name == campaign.name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Given a file operation this function returns the file with the option for the inputted operation

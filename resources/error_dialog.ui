@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdErrorDialog" parent="GtkApplicationWindow">
+        <property name="title">Error</property>
+        <property name="deletable">false</property>
+        <child>
+            <object class="GtkBox">
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="orientation">vertical</property>
+                <property name="margin_top">6</property>
+                <property name="margin_bottom">6</property>
+                <property name="margin_start">6</property>
+                <property name="margin_end">6</property>
+                <property name="spacing">6</property>
+                <child>
+                    <object class="GtkLabel" id="message_label">
+                        <property name="halign">center</property>
+                        <property name="hexpand">true</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton">
+                        <signal name="clicked" handler="handle_ok"
+                            swapped="true" />
+                        <property name="hexpand">true</property>
+                        <property name="label">Ok</property>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

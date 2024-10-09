@@ -5,12 +5,14 @@ use gtk::{
 };
 use std::cell::RefCell;
 
-use crate::dragon_display::setup::config::Campaign;
+use crate::dragon_display::setup::{config::Campaign, AddRemoveMessage};
 
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
 mod imp {
+    use crate::dragon_display::setup::AddRemoveMessage;
+
     use super::*;
     // Object holding the campaign
     #[derive(Default)]
@@ -18,7 +20,7 @@ mod imp {
         pub campaign: RefCell<Campaign>,
         // We make this an option so that the default trait is implemented
         // We should panic if the Option is None (the sender is not set)
-        pub sender: RefCell<Option<Sender<Campaign>>>,
+        pub sender: RefCell<Option<Sender<AddRemoveMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -48,7 +50,7 @@ mod imp {
                 .borrow()
                 .clone()
                 .unwrap()
-                .send_blocking(c)
+                .send_blocking(AddRemoveMessage::Campaign { campaign: c })
                 .expect("Channel closed");
         }
     }
@@ -61,14 +63,10 @@ glib::wrapper! {
 }
 
 impl RemoveButton {
-    pub fn new(campaign: Campaign, sender: Option<Sender<Campaign>>) -> Self {
+    pub fn new(campaign: Campaign, sender: Option<Sender<AddRemoveMessage>>) -> Self {
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
         object.set_label(&campaign.name);
-        object.set_margin_end(6);
-        object.set_margin_bottom(6);
-        object.set_margin_start(6);
-        object.set_margin_top(6);
         imp.campaign.replace(campaign);
         imp.sender.replace(sender);
 

@@ -87,10 +87,6 @@ impl CampaignButton {
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
         object.set_label(&campaign.name);
-        object.set_margin_end(6);
-        object.set_margin_bottom(6);
-        object.set_margin_start(6);
-        object.set_margin_top(6);
         imp.campaign.replace(campaign);
         imp.sender.replace(sender);
 

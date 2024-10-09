@@ -1,7 +1,7 @@
 // File containing functions for google drive synchronizing functionality
 use async_recursion::async_recursion;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use google_drive::{AccessToken, Client};
+use google_drive::Client;
 use reqwest::blocking::Client as ReqwestClient;
 use rouille::{Response, Server};
 use std::{
@@ -17,15 +17,10 @@ use tokio::io::copy;
 use gtk::glib::{clone, spawn_future};
 
 use super::config::{Campaign, SynchronizationOption, IMAGE_EXTENSIONS};
-use super::ui::google_drive::FolderAmount;
+use crate::ui::googledrive_connect::InitializeMessage;
+use crate::widgets::progress_bar::ProgressMessage;
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
-
-pub enum InitializeMessage {
-    UserConsentUrl { url: String },
-    Token { token: AccessToken },
-    Error { error: Error },
-}
 
 #[derive(Clone)]
 /// A data structure containing the maps used to create the googledrive folder tree and the up-to-date access and refresh token
@@ -227,7 +222,7 @@ fn get_state_and_code(request: &str) -> Result<(String, String), io::Error> {
 pub async fn get_folder_tree(
     folder_result: FolderResult,
     folder_id: String,
-    sender: async_channel::Sender<FolderAmount>,
+    sender: async_channel::Sender<ProgressMessage>,
 ) -> Result<FolderResult, io::Error> {
     // The amount of child folders under the current id
     let mut child_folders: usize = 0;
@@ -271,7 +266,7 @@ pub async fn get_folder_tree(
         }
         //The amount of child folders is send to the progress bar
         sender
-            .send_blocking(FolderAmount::Current {
+            .send_blocking(ProgressMessage::Current {
                 amount: child_folders,
             })
             .expect("channel closed");
@@ -342,7 +337,7 @@ pub async fn get_folder_amount(
 /// Returns updated campaign with the amount of files that could not be downloaded or an error
 pub async fn synchronize_files(
     campaign: Campaign,
-    sender: async_channel::Sender<FolderAmount>,
+    sender: async_channel::Sender<ProgressMessage>,
 ) -> Result<(Campaign, Vec<String>), io::Error> {
     configure_environment()?;
     let (mut access_token, refresh_token, google_drive_sync_folder) = match campaign.sync_option {
@@ -405,7 +400,7 @@ pub async fn synchronize_files(
         break;
     }
     sender
-        .send_blocking(FolderAmount::Total {
+        .send_blocking(ProgressMessage::Total {
             amount: drive_files.len(),
         })
         .expect("Channel closed");
@@ -428,7 +423,7 @@ pub async fn synchronize_files(
         }
     }
     sender
-        .send_blocking(FolderAmount::Current { amount: current })
+        .send_blocking(ProgressMessage::Current { amount: current })
         .expect("Channel closed");
 
     for file in remove_files {
@@ -482,7 +477,7 @@ pub async fn synchronize_files(
             }
 
             sender
-                .send_blocking(FolderAmount::Current { amount: 1 })
+                .send_blocking(ProgressMessage::Current { amount: 1 })
                 .expect("Channel closed");
             break;
         }
@@ -536,7 +531,7 @@ fn configure_environment() -> Result<(), io::Error> {
     Ok(())
 }
 
-// takes in an old refresh and access token and returns a new one;
+/// takes in an old refresh and access token and returns a new one;
 async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdSelectCampaignWindow" parent="GtkApplicationWindow">
+        <property name="title">Select Campaign</property>
+        <child>
+            <object class="GtkBox">
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="orientation">vertical</property>
+                <property name="margin_top">6</property>
+                <property name="margin_bottom">6</property>
+                <property name="margin_start">6</property>
+                <property name="margin_end">6</property>
+                <property name="spacing">6</property>
+                <child>
+                    <object class="GtkLabel" id="select_message">
+                        <property name="halign">center</property>
+                        <property name="hexpand">true</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkGrid" id="campaign_grid">
+                        <property name="halign">center</property>
+                        <property name="hexpand">true</property>
+                        <property name="row-spacing">6</property>
+                        <property name="column-spacing">6</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkBox" id="remove_add_box">
+                        <property name="halign">center</property>
+                        <property name="hexpand">true</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="margin_top">6</property>
+                        <property name="margin_bottom">6</property>
+                        <property name="margin_start">6</property>
+                        <property name="margin_end">6</property>
+                        <property name="spacing">6</property>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_remove"
+                                    swapped="true" />
+                                <property name="label">remove campaign</property>
+                                <property name="margin_top">6</property>
+                                <property name="margin_bottom">6</property>
+                                <property name="margin_start">6</property>
+                                <property name="margin_end">6</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_add"
+                                    swapped="true" />
+                                <property name="label">add campaign</property>
+                                <property name="margin_top">6</property>
+                                <property name="margin_bottom">6</property>
+                                <property name="margin_start">6</property>
+                                <property name="margin_end">6</property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

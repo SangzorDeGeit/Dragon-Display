@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<gresources>
+    <gresource prefix="/dragon/display/">
+        <file compressed="true" preprocess="xml-stripblanks">select_campaign.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">remove_campaign.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">remove_confirm.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">add_campaign.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">error_dialog.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">googledrive_connect.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">googledrive_select_folder.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">progress_bar.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">folder_tree.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">googledrive_synchronize.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">select_monitor.ui</file>
+    </gresource>
+</gresources>

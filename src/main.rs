@@ -1,11 +1,12 @@
 use std::sync::OnceLock;
 
 //GUI crates
-use gtk::glib;
 use gtk::prelude::*;
+use gtk::{gio, glib};
 
 //imported modules
 pub mod dragon_display;
+pub mod ui;
 pub mod widgets;
 
 use dragon_display::setup::select_campaign;
@@ -19,6 +20,9 @@ pub fn runtime() -> &'static Runtime {
 }
 
 fn main() -> glib::ExitCode {
+    //register resources
+    gio::resources_register_include!("dragon_display.gresource")
+        .expect("Failed to register resources");
     let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
 
     app.connect_activate(select_campaign);

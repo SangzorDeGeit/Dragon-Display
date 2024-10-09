@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdGoogleFolderTree" parent="GtkWidget">
+        <child>
+            <object class="GtkScrolledWindow" id="window">
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="height-request">400</property>
+            </object>
+        </child>
+    </template>
+</interface>

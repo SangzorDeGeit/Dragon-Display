@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdProgressBar" parent="GtkWidget">
+        <child>
+            <object class="GtkProgressBar" id="progress_bar">
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="fraction">0.0</property>
+                <property name="show-text">true</property>
+            </object>
+        </child>
+    </template>
+</interface>

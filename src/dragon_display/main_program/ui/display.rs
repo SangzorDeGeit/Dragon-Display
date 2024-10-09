@@ -7,11 +7,9 @@ use gtk::{ApplicationWindow, Picture};
 use crate::dragon_display::main_program::Message;
 
 pub fn display_window(app: &adw::Application, receiver: Receiver<Message>) -> ApplicationWindow {
-    let picture = Picture::for_filename("Uclia/Roverbos.jpg");
     let window = ApplicationWindow::builder()
         .title("Dragon-Display")
         .application(app)
-        .child(&picture)
         .build();
 
     spawn_future_local(clone!(@weak window => async move  {

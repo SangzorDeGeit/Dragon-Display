@@ -4,10 +4,12 @@ use gtk::{glib, gio, ApplicationWindow, Button, Grid, Label, ScrolledWindow, Lis
 
 use super::CustomMargin;
 use crate::dragon_display::setup::config::{Campaign, SynchronizationOption};
-use crate::dragon_display::setup::google_drive::{get_folder_amount, get_folder_tree, initialize_client, synchronize_files, FolderResult, InitializeMessage};
+use crate::dragon_display::setup::google_drive::{get_folder_amount, get_folder_tree, initialize_client, synchronize_files, FolderResult};
 use crate::dragon_display::setup::AddRemoveMessage;
 use crate::widgets::google_folder_object::GoogleFolderObject;
 use crate::runtime;
+use crate::ui::googledrive_connect::InitializeMessage;
+use crate::widgets::progress_bar::ProgressMessage;
 
 use async_channel::Sender;
 use std::io::{Error, ErrorKind};
@@ -26,11 +28,6 @@ pub enum TreeWidgetMessage {
     ProgressBar {progressbar: ProgressBar},
     FolderTree {foldertree: ScrolledWindow, access_token: String, refresh_token: String},
     FolderSelection {folder_name: String, folder_id: String},
-}
-
-pub enum FolderAmount{
-    Total {amount: usize},
-    Current {amount : usize},
 }
 
 pub fn googledrive_connect_window(
@@ -198,8 +195,6 @@ pub fn googledrive_select_path_window(
     container.attach(&button_choose, 1, 4, 1, 1);
 
     // ui logic
-    label_selection.set_label("My Drive");
-    label.set_label("Select a folder where Dragon-Display will download the images from. Current folder: ");
 
     let(access_token, refresh_token) = match campaign.sync_option.clone() {
         SynchronizationOption::GoogleDrive { access_token, refresh_token, .. } => (access_token, refresh_token), 
@@ -230,6 +225,8 @@ pub fn googledrive_select_path_window(
                     }
                     container.attach(&foldertree, 0, 2, 2, 1);
                     button_refresh.set_sensitive(true);
+                    label.set_label("Select a folder where Dragon-Display will download the images from. Current folder: ");
+                    label_selection.set_label("My Drive");
                 },
                 TreeWidgetMessage::FolderSelection {folder_name, folder_id } => {
                     label_selection.set_label(&folder_name);
@@ -238,7 +235,7 @@ pub fn googledrive_select_path_window(
                 },
             } 
         };
-    }));
+   }));
 
     button_cancel.connect_clicked(clone!(@strong sender => move |_| {
         sender.send_blocking(AddRemoveMessage::Cancel).expect("Channel closed");
@@ -289,12 +286,12 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
     spawn_future_local(clone!(@strong progress_bar, @strong widget_sender => async move {
         while let Ok(amount) = update_progressbar_receiver.recv().await {
             match amount {
-                FolderAmount::Total { amount } => {
+                ProgressMessage::Total { amount } => {
                     if amount > 0 {
                         total = amount as f64;
                     }
                 }
-                FolderAmount::Current { amount } => {
+                ProgressMessage::Current { amount } => {
                     let new_current = current + amount as f64;
                     if new_current <= total {
                         current = new_current;
@@ -364,19 +361,14 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
             // We want to set the Label of the widget and we want to connect the TreeExpander to the
             // TreeListRow
             factory.connect_bind(clone!(@strong tree_model => move |_, list_item| {
-                let folder_object = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("connect_bind in ListItemFactory: item needs to be a ListItem")
+                let listitem = list_item.downcast_ref::<ListItem>().expect("connect_bind in ListitemFactory: item needs to be a ListItem");
+                let folder_object = listitem
                     .item()
                     .and_downcast::<GoogleFolderObject>()
                     .expect("Connect_bind in ListItemFactory: item was not a TreeListRow");
-                let position = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("connect_bind in ListItemFactory: item needs to be a ListItem")
+                let position = listitem
                     .position();
-                let hbox = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("connect_bind in ListItemFactory: item needs to be a ListItem")
+                let hbox = listitem
                     .child()
                     .and_downcast::<Box>()
                     .expect("Connect_bind in ListItemFactory: child was not a Label");
@@ -430,7 +422,7 @@ fn create_tree_widget(access_token: String, refresh_token: String, widget_sender
                 return
             },
         };
-        update_progressbar_sender.send_blocking(FolderAmount::Total { amount: total }).expect("Channel Closed");
+        update_progressbar_sender.send_blocking(ProgressMessage::Total { amount: total }).expect("Channel Closed");
 
         let mut id_name_map = HashMap::new();
         id_name_map.insert("root".to_string(), "My Drive".to_string());
@@ -486,12 +478,12 @@ pub fn googledrive_synchronize_window(app: &adw::Application, campaign: Campaign
     spawn_future_local(async move {
         while let Ok(message) = update_progress_receiver.recv().await {
             match message {
-                FolderAmount::Total { amount } => {
+                ProgressMessage::Total { amount } => {
                     if amount > 0 {
                         total = amount as f64;
                     }
                 },
-                FolderAmount::Current { amount } => {
+                ProgressMessage::Current { amount } => {
                     let new_current = current + amount as f64;
                     if  new_current <= total {
                         current = new_current;

@@ -4,7 +4,8 @@ use gdk4::Monitor;
 use gtk::prelude::*;
 
 use crate::dragon_display::setup::config::Campaign;
-use ui::{control_panel::control_panel_window, display::display_window};
+use ui::control_panel::control_panel_window;
+use ui::display::display_window;
 
 pub enum Message {
     Image { picture_path: String },

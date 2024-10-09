@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdRemoveConfirmWindow" parent="GtkApplicationWindow">
+        <property name="title">Confirm</property>
+        <property name="deletable">false</property>
+        <child>
+            <object class="GtkGrid">
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="margin_top">6</property>
+                <property name="margin_bottom">6</property>
+                <property name="margin_start">6</property>
+                <property name="margin_end">6</property>
+                <property name="row-spacing">6</property>
+                <property name="column-spacing">6</property>
+                <child>
+                    <object class="GtkLabel" id="message_label">
+                        <property name="halign">center</property>
+                        <property name="hexpand">true</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">0</property>
+                            <property name="column-span">2</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton">
+                        <signal name="clicked" handler="handle_yes"
+                            swapped="true" />
+                        <property name="hexpand">true</property>
+                        <property name="label">Yes</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton">
+                        <signal name="clicked" handler="handle_no"
+                            swapped="true" />
+                        <property name="hexpand">true</property>
+                        <property name="label">No</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

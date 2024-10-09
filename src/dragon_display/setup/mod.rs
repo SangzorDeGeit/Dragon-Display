@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 
 use adw::prelude::*;
+use async_channel::Sender;
 use config::{remove_campaign_from_config, write_campaign_to_config};
 use glib::clone;
 use gtk::glib;
@@ -13,16 +14,18 @@ use gtk::glib::spawn_future_local;
 
 use config::{Campaign, SynchronizationOption};
 
-use ui::add_campaign::add_campaign_window;
-use ui::error::handle_setup_error;
-use ui::google_drive::{
-    googledrive_connect_window, googledrive_select_path_window, googledrive_synchronize_window,
-};
-use ui::remove_campaign::remove_campaign_window;
-use ui::select_campaign::select_campaign_window;
-use ui::select_monitor::select_monitor_window;
-
 use crate::dragon_display::main_program::start_dragon_display;
+use crate::ui::add_campaign::AddCampaignWindow;
+use crate::ui::error_dialog::ErrorDialog;
+use crate::ui::googledrive_connect::GoogledriveConnectWindow;
+use crate::ui::googledrive_select_folder::DdGoogleFolderSelectWindow;
+use crate::ui::googledrive_synchronize::GoogledriveSynchronizeWindow;
+use crate::ui::remove_campaign::RemoveCampaignWindow;
+use crate::ui::remove_confirm::RemoveConfirmWindow;
+use crate::ui::select_campaign::SelectCampaignWindow;
+use crate::ui::select_monitor::SelectMonitorWindow;
+
+use super::main_program::ui::control_panel::refresh;
 
 /// The messages that the select_campaign_window can send
 pub enum SelectMessage {
@@ -43,21 +46,21 @@ pub enum CallingFunction {
     AddCampaign,
     SelectPath,
     Synchronize,
-    //Refresh,
+    Refresh,
 }
 
 /// Make and present the window to select a campaign
 pub fn select_campaign(app: &adw::Application) {
     // This channel lets the frontend(ui) communicate with the manager
     let (sender, receiver) = async_channel::bounded(1);
-
-    let window = match select_campaign_window(app, sender) {
-        Ok(w) => w,
+    let campaign_list = match config::read_campaign_from_config() {
+        Ok(l) => l,
         Err(error) => {
-            handle_setup_error(app, error, true);
+            ErrorDialog::new(app, error, true).present();
             return;
         }
     };
+    let window = SelectCampaignWindow::new(app, Some(sender), campaign_list);
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
@@ -79,7 +82,7 @@ pub fn select_campaign(app: &adw::Application) {
                     window.destroy();
                     add_campaign(&app);
                 },
-                SelectMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
+                SelectMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
             }
         }
     }));
@@ -87,14 +90,16 @@ pub fn select_campaign(app: &adw::Application) {
 
 /// Make and present the window to remove a campaign
 fn remove_campaign(app: &adw::Application) {
+    // This channel lets the frontend(ui) communicate with the manager
     let (sender, receiver) = async_channel::bounded(1);
-    let window = match remove_campaign_window(app, sender) {
-        Ok(w) => w,
+    let campaign_list = match config::read_campaign_from_config() {
+        Ok(l) => l,
         Err(error) => {
-            handle_setup_error(app, error, true);
+            ErrorDialog::new(app, error, true).present();
             return;
         }
     };
+    let window = RemoveCampaignWindow::new(app, Some(sender), campaign_list);
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
@@ -103,17 +108,40 @@ fn remove_campaign(app: &adw::Application) {
             match message {
                 AddRemoveMessage::Campaign { campaign } => {
                     window.destroy();
-                    match remove_campaign_from_config(campaign) {
-                        Ok(_) => (),
-                        Err(e) => handle_setup_error(&app, e, false),
-                    }
-                    remove_campaign(&app);
+                    remove_confirm(&app, campaign);
                 }
                 AddRemoveMessage::Cancel => {
                     window.destroy();
                     select_campaign(&app);
                 },
-                AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
+                AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
+            }
+        }
+    }));
+}
+
+fn remove_confirm(app: &adw::Application, campaign: Campaign) {
+    // This channel lets the frontend(ui) communicate with the manager
+    let (sender, receiver) = async_channel::bounded(1);
+    let window = RemoveConfirmWindow::new(app, Some(sender), campaign);
+    window.present();
+
+    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
+        while let Ok(message) = receiver.recv().await {
+            match message {
+                AddRemoveMessage::Campaign { campaign } => {
+                    window.destroy();
+                    match remove_campaign_from_config(campaign, true) {
+                        Ok(_) => (),
+                        Err(error) => ErrorDialog::new(&app, error, false).present(),
+                    }
+                    remove_campaign(&app);
+                }
+                AddRemoveMessage::Cancel => {
+                    window.destroy();
+                    remove_campaign(&app);
+                },
+                AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
             }
         }
     }));
@@ -121,14 +149,8 @@ fn remove_campaign(app: &adw::Application) {
 
 /// Make and present the window to add a campaign
 fn add_campaign(app: &adw::Application) {
-    let (sender, receiver) = async_channel::bounded(1);
-    let window = match add_campaign_window(app, sender) {
-        Ok(w) => w,
-        Err(error) => {
-            handle_setup_error(app, error, true);
-            return;
-        }
-    };
+    let (sender, receiver) = async_channel::unbounded();
+    let window = AddCampaignWindow::new(&app, Some(sender));
     window.present();
 
     // We have to await messages from the channel without blocking the main event loop
@@ -139,14 +161,14 @@ fn add_campaign(app: &adw::Application) {
                     window.destroy();
                     match campaign.sync_option {
                         SynchronizationOption::None => write_campaign(&app, campaign),
-                        SynchronizationOption::GoogleDrive {..} => googledrive_connect(&app, campaign, CallingFunction::AddCampaign),
+                        SynchronizationOption::GoogleDrive {..} => googledrive_connect(&app, campaign, CallingFunction::AddCampaign, None),
                     }
                 }
                 AddRemoveMessage::Cancel => {
                     window.destroy();
                     select_campaign(&app);
                 },
-                AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
+                AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
             }
         }
     }));
@@ -154,8 +176,8 @@ fn add_campaign(app: &adw::Application) {
 
 /// Call config processes to add a campaign to the config file
 pub fn write_campaign(app: &adw::Application, campaign: Campaign) {
-    if let Err(e) = write_campaign_to_config(campaign) {
-        handle_setup_error(&app, e, false);
+    if let Err(error) = write_campaign_to_config(campaign) {
+        ErrorDialog::new(app, error, true).present();
     }
     select_campaign(&app);
 }
@@ -165,52 +187,51 @@ pub fn googledrive_connect(
     app: &adw::Application,
     campaign: Campaign,
     calling_function: CallingFunction,
+    refresh_sender: Option<Sender<()>>,
 ) {
     let (sender, receiver) = async_channel::bounded(1);
     let reconnect = match calling_function {
         CallingFunction::SelectPath => true,
         CallingFunction::Synchronize => true,
         CallingFunction::AddCampaign => false,
+        CallingFunction::Refresh => true,
     };
-    let window = match googledrive_connect_window(app, campaign.clone(), sender, reconnect) {
-        Ok(w) => w,
-        Err(error) => {
-            handle_setup_error(app, error, true);
-            return;
-        }
-    };
+    let window = GoogledriveConnectWindow::new(&app, campaign.clone(), sender, reconnect);
     window.present();
 
-    glib::spawn_future_local(clone!(@weak window, @weak app => async move {
-        while let Ok(message) = receiver.recv().await {
-            match message {
-                AddRemoveMessage::Campaign { campaign } => {
-                    window.destroy();
-                    match calling_function {
-                        CallingFunction::AddCampaign => googledrive_select_path(&app, campaign),
-                        CallingFunction::SelectPath => googledrive_select_path(&app, campaign),
-                        CallingFunction::Synchronize => googledrive_synchronize(&app, campaign),
+    glib::spawn_future_local(
+        clone!(@weak window, @weak app, @strong campaign => async move {
+            while let Ok(message) = receiver.recv().await {
+                match message {
+                    AddRemoveMessage::Campaign { campaign } => {
+                        window.destroy();
+                        match calling_function {
+                            CallingFunction::AddCampaign => googledrive_select_folder(&app, campaign),
+                            CallingFunction::SelectPath => googledrive_select_folder(&app, campaign),
+                            CallingFunction::Synchronize => googledrive_synchronize(&app, campaign),
+                            CallingFunction::Refresh => refresh(&app, campaign, refresh_sender.clone().expect("No refresh sender was sent")),
+                        }
                     }
+                    AddRemoveMessage::Cancel => {
+                        window.destroy();
+                        match calling_function {
+                            CallingFunction::AddCampaign => select_campaign(&app),
+                            CallingFunction::SelectPath => googledrive_select_folder(&app, campaign.clone()),
+                            CallingFunction::Synchronize => googledrive_synchronize(&app, campaign.clone()),
+                            CallingFunction::Refresh => refresh(&app, campaign.clone(), refresh_sender.clone().expect("No refresh sender was sent")),
+                        }
+                    }
+                    AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
                 }
-                AddRemoveMessage::Cancel => {
-                    window.destroy();
-                }
-                AddRemoveMessage::Error { error, fatal } => handle_setup_error(&app, error, fatal),
             }
-        }
-    }));
+        }),
+    );
 }
 
 /// Make and present the window to select a synchronization folder in google drive
-pub fn googledrive_select_path(app: &adw::Application, campaign: Campaign) {
+pub fn googledrive_select_folder(app: &adw::Application, campaign: Campaign) {
     let (sender, receiver) = async_channel::bounded(1);
-    let window = match googledrive_select_path_window(app, campaign.clone(), sender) {
-        Ok(w) => w,
-        Err(error) => {
-            handle_setup_error(app, error, true);
-            return;
-        }
-    };
+    let window = DdGoogleFolderSelectWindow::new(app, campaign.clone(), sender);
     window.present();
 
     glib::spawn_future_local(clone!(@weak window, @weak app => async move {
@@ -228,9 +249,9 @@ pub fn googledrive_select_path(app: &adw::Application, campaign: Campaign) {
                     match error.kind() {
                         ErrorKind::ConnectionRefused => {
                             window.destroy();
-                            googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath);
+                            googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath, None);
                         },
-                        _ => handle_setup_error(&app, error, fatal),
+                        _ => ErrorDialog::new(&app, error, fatal).present(),
                     }
                 }
             }
@@ -240,15 +261,16 @@ pub fn googledrive_select_path(app: &adw::Application, campaign: Campaign) {
 
 fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
     let (sender, receiver) = async_channel::bounded::<Result<(Campaign, Vec<String>), Error>>(1);
-    let window = googledrive_synchronize_window(&app, campaign.clone(), sender);
+    let window = GoogledriveSynchronizeWindow::new(app, campaign.clone(), sender);
     window.present();
 
     if let Err(e) = fs::create_dir_all(&campaign.path) {
-        handle_setup_error(
+        ErrorDialog::new(
             app,
             Error::new(e.kind(), "Could not create folder for images"),
             true,
-        );
+        )
+        .present();
     }
 
     glib::spawn_future_local(clone!(@strong campaign, @weak app => async move {
@@ -259,16 +281,19 @@ fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
                     if failed.len() > 0 {
                         let failed_files = failed.join(", ");
                         let errormsg = format!("The following files could not be downloaded:\n{}", failed_files);
-                        handle_setup_error(&app, Error::new(ErrorKind::Unsupported, errormsg), false);
+                        ErrorDialog::new(&app, Error::new(ErrorKind::Unsupported, errormsg), false).present();
                     }
-                    select_monitor(&app, campaign);
+                    match write_campaign_to_config(campaign.clone()) {
+                        Ok(_) => select_monitor(&app, campaign),
+                        Err(error) => ErrorDialog::new(&app, error, true).present(),
+                    }
                 },
                 Err(e) => match e.kind() {
                     ErrorKind::ConnectionRefused => {
                         window.destroy();
-                        googledrive_connect(&app, campaign.clone(), CallingFunction::Synchronize)
+                        googledrive_connect(&app, campaign.clone(), CallingFunction::Synchronize, None)
                     }
-                    _ => handle_setup_error(&app, e, false),
+                    _ => ErrorDialog::new(&app, e, false).present(),
                 },
             };
         }
@@ -277,19 +302,21 @@ fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
 
 fn select_monitor(app: &adw::Application, campaign: Campaign) {
     let (sender, receiver) = async_channel::bounded(1);
-    let window = match select_monitor_window(app, sender) {
-        Ok(w) => w,
-        Err(e) => {
-            handle_setup_error(&app, e, true);
-            return;
-        }
-    };
+    let window = SelectMonitorWindow::new(app, sender);
     window.present();
 
     spawn_future_local(clone!(@weak window, @weak app => async move {
-        while let Ok(monitor) = receiver.recv().await {
-            window.destroy();
-            start_dragon_display(&app, campaign.clone(), monitor);
-        };
+        while let Ok(message) = receiver.recv().await {
+            match message {
+                Ok(monitor) => {
+                    window.destroy();
+                    start_dragon_display(&app, campaign.clone(), monitor)
+                },
+                Err(error) => {
+                    ErrorDialog::new(&app, error, true).present();
+                    return;
+                }
+            }
+        }
     }));
 }
