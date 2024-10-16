@@ -1,6 +1,5 @@
 pub mod config;
 pub mod google_drive;
-pub mod ui;
 
 use std::fs;
 use std::io::{Error, ErrorKind};
@@ -8,14 +7,15 @@ use std::io::{Error, ErrorKind};
 use adw::prelude::*;
 use async_channel::Sender;
 use config::{remove_campaign_from_config, write_campaign_to_config};
+use gdk4::Monitor;
 use glib::clone;
 use gtk::glib;
 use gtk::glib::spawn_future_local;
 
 use config::{Campaign, SynchronizationOption};
 
-use crate::dragon_display::main_program::start_dragon_display;
 use crate::ui::add_campaign::AddCampaignWindow;
+use crate::ui::control_window::ControlWindow;
 use crate::ui::error_dialog::ErrorDialog;
 use crate::ui::googledrive_connect::GoogledriveConnectWindow;
 use crate::ui::googledrive_select_folder::DdGoogleFolderSelectWindow;
@@ -25,7 +25,7 @@ use crate::ui::remove_confirm::RemoveConfirmWindow;
 use crate::ui::select_campaign::SelectCampaignWindow;
 use crate::ui::select_monitor::SelectMonitorWindow;
 
-use super::main_program::ui::control_panel::refresh;
+use super::main_program::ui::display::display_window;
 
 /// The messages that the select_campaign_window can send
 pub enum SelectMessage {
@@ -46,7 +46,6 @@ pub enum CallingFunction {
     AddCampaign,
     SelectPath,
     Synchronize,
-    Refresh,
 }
 
 /// Make and present the window to select a campaign
@@ -194,7 +193,6 @@ pub fn googledrive_connect(
         CallingFunction::SelectPath => true,
         CallingFunction::Synchronize => true,
         CallingFunction::AddCampaign => false,
-        CallingFunction::Refresh => true,
     };
     let window = GoogledriveConnectWindow::new(&app, campaign.clone(), sender, reconnect);
     window.present();
@@ -209,7 +207,6 @@ pub fn googledrive_connect(
                             CallingFunction::AddCampaign => googledrive_select_folder(&app, campaign),
                             CallingFunction::SelectPath => googledrive_select_folder(&app, campaign),
                             CallingFunction::Synchronize => googledrive_synchronize(&app, campaign),
-                            CallingFunction::Refresh => refresh(&app, campaign, refresh_sender.clone().expect("No refresh sender was sent")),
                         }
                     }
                     AddRemoveMessage::Cancel => {
@@ -218,7 +215,6 @@ pub fn googledrive_connect(
                             CallingFunction::AddCampaign => select_campaign(&app),
                             CallingFunction::SelectPath => googledrive_select_folder(&app, campaign.clone()),
                             CallingFunction::Synchronize => googledrive_synchronize(&app, campaign.clone()),
-                            CallingFunction::Refresh => refresh(&app, campaign.clone(), refresh_sender.clone().expect("No refresh sender was sent")),
                         }
                     }
                     AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
@@ -319,4 +315,18 @@ fn select_monitor(app: &adw::Application, campaign: Campaign) {
             }
         }
     }));
+}
+
+fn start_dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monitor) {
+    let (sender, receiver) = async_channel::unbounded();
+
+    let control_window = ControlWindow::new(&app, campaign, sender);
+    control_window.present();
+    let display_window = display_window(&app, receiver);
+    display_window.present();
+    display_window.fullscreen_on_monitor(&monitor);
+
+    control_window.connect_destroy(move |_| {
+        display_window.destroy();
+    });
 }

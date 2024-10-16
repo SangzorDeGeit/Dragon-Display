@@ -21,7 +21,7 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{
         glib, template_callbacks, Button, CompositeTemplate, DropDown, Entry, FileChooserDialog,
-        Label, Stack, StackPage,
+        Label, Stack,
     };
     use gtk::{prelude::*, ResponseType};
 
@@ -34,12 +34,6 @@ mod imp {
     pub struct AddCampaignWindow {
         #[template_child]
         pub stack: TemplateChild<Stack>,
-        #[template_child]
-        pub page1: TemplateChild<StackPage>,
-        #[template_child]
-        pub page2: TemplateChild<StackPage>,
-        #[template_child]
-        pub page3: TemplateChild<StackPage>,
         #[template_child]
         pub entry: TemplateChild<Entry>,
         #[template_child]

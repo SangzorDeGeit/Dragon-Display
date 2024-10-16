@@ -3,14 +3,18 @@ use std::io::Error;
 
 use async_channel::Sender;
 use gtk::glib::clone;
-use gtk::prelude::*;
+use gtk::{prelude::*, ApplicationWindow};
 use gtk::{Box, Grid, Image, Label, ToggleButton};
 
-use crate::dragon_display::{main_program::Message, setup::config::Campaign};
+use crate::dragon_display::setup::config::Campaign;
+use crate::ui::control_window::UpdateDisplayMessage;
 
 pub const APP_ID: &str = "com.github.SangzorDeGeit.Dragon-Display";
 
-pub fn create_image_page(campaign: Campaign, sender: Sender<Message>) -> Result<gtk::Box, Error> {
+pub fn create_image_page(
+    campaign: Campaign,
+    sender: Sender<UpdateDisplayMessage>,
+) -> Result<gtk::Box, Error> {
     let image_page = Box::new(gtk::Orientation::Horizontal, 6);
     let image_options = Box::new(gtk::Orientation::Vertical, 4);
     let imagegrid_navigation = Box::new(gtk::Orientation::Vertical, 6);
@@ -26,7 +30,7 @@ pub fn create_image_page(campaign: Campaign, sender: Sender<Message>) -> Result<
 /// Updates the imagegrid that is inputted
 pub fn update_image_grid(
     campaign: Campaign,
-    sender: Sender<Message>,
+    sender: Sender<UpdateDisplayMessage>,
     grid: &Grid,
 ) -> Result<(), Error> {
     // first remove all children in the grid
@@ -58,7 +62,7 @@ pub fn update_image_grid(
 
 fn create_image_grid(
     campaign: Campaign,
-    sender: Sender<Message>,
+    sender: Sender<UpdateDisplayMessage>,
     grid: &Grid,
 ) -> Result<(), Error> {
     let settings = gtk::gio::Settings::new(APP_ID);
@@ -107,7 +111,7 @@ fn create_image_grid(
 
         button.connect_clicked(clone!(@strong sender, @strong path => move |_| {
             sender
-                .send_blocking(Message::Image { picture_path: path.to_string() })
+                .send_blocking(UpdateDisplayMessage::Image { picture_path: path.to_string() })
                 .expect("Channel closed");
         }));
         previous_button = Some(button);

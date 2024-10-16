@@ -4,11 +4,11 @@
     <schema id="com.github.SangzorDeGeit.Dragon-Display"
         path="/com/github/SangzorDeGeid/Dragon-Display/">
         <key name="imagegrid-column-amount" type="i">
-            <default>5</default>
+            <default>3</default>
             <summary>Default amount of columns to in the image page for the control panel</summary>
         </key>
         <key name="imagegrid-row-amount" type="i">
-            <default>5</default>
+            <default>3</default>
             <summary>Default amount of rows to in the image page for the control panel</summary>
         </key>
     </schema>

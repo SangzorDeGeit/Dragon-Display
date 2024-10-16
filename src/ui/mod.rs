@@ -1,4 +1,5 @@
 pub mod add_campaign;
+pub mod control_window;
 pub mod error_dialog;
 pub mod googledrive_connect;
 pub mod googledrive_select_folder;

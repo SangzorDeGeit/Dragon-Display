@@ -6,7 +6,7 @@
         <child>
             <object class="GtkStack" id="stack">
                 <child>
-                    <object class="GtkStackPage" id="page1">
+                    <object class="GtkStackPage">
                         <property name="name">page1</property>
                         <property name="title">Name</property>
                         <property name="child">
@@ -61,7 +61,7 @@
                     </object>
                 </child>
                 <child>
-                    <object class="GtkStackPage" id="page2">
+                    <object class="GtkStackPage">
                         <property name="name">page2</property>
                         <property name="title">Synchronization service</property>
                         <property name="child">
@@ -135,7 +135,7 @@
                     </object>
                 </child>
                 <child>
-                    <object class="GtkStackPage" id="page3">
+                    <object class="GtkStackPage">
                         <property name="name">page3</property>
                         <property name="title">Image Location</property>
                         <property name="child">

@@ -13,5 +13,9 @@
         <file compressed="true" preprocess="xml-stripblanks">folder_tree.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">googledrive_synchronize.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">select_monitor.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">control_window.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">image_page.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">thumbnail_grid.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">thumbnail.ui</file>
     </gresource>
 </gresources>

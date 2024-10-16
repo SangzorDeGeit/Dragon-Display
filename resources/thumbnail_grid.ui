@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdThumbnailGrid" parent="GtkWidget">
+        <child>
+            <object class="GtkBox" id="main_box">
+                <property name="orientation">vertical</property>
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="spacing">3</property>
+                <child>
+                    <object class="GtkBox" id="navigation_box">
+                        <property name="orientation">horizontal</property>
+                        <property name="halign">fill</property>
+                        <property name="valign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="spacing">3</property>
+                        <child>
+                            <object class="GtkButton" id="previous">
+                                <signal name="clicked" handler="handle_previous" swapped="true" />
+                                <property name="label">Previous</property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="next">
+                                <signal name="clicked" handler="handle_next" swapped="true" />
+                                <property name="label">Next</property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>
