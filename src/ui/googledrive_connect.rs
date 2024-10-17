@@ -7,8 +7,8 @@ use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::AddRemoveMessage;
+use crate::config::Campaign;
+use crate::setup_manager::AddRemoveMessage;
 
 pub enum InitializeMessage {
     UserConsentUrl { url: String },
@@ -27,9 +27,9 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Label};
 
-    use crate::dragon_display::setup::config::{Campaign, SynchronizationOption};
-    use crate::dragon_display::setup::google_drive::initialize_client;
-    use crate::dragon_display::setup::AddRemoveMessage;
+    use crate::google_drive::initialize_client;
+    use crate::config::{Campaign, SynchronizationOption};
+    use crate::setup_manager::AddRemoveMessage;
     use crate::runtime;
 
     // Object holding the state

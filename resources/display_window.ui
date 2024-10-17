@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdDisplayWindow" parent="GtkApplicationWindow">
+        <property name="title">Display</property>
+        <property name="deletable">false</property>
+        <child>
+            <object class="GtkBox" id="content">
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="vexpand">true</property>
+                <property name="hexpand">true</property>
+                <property name="orientation">vertical</property>
+            </object>
+        </child>
+    </template>
+</interface>

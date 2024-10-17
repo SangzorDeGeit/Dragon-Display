@@ -8,12 +8,10 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::google_drive::{
-    get_folder_amount, get_folder_tree, FolderResult,
-};
-use crate::dragon_display::setup::AddRemoveMessage;
+use crate::config::Campaign;
+use crate::google_drive::{get_folder_amount, get_folder_tree, FolderResult};
 use crate::runtime;
+use crate::setup_manager::AddRemoveMessage;
 use crate::widgets::google_folder_tree::DdGoogleFolderTree;
 use crate::widgets::progress_bar::DdProgressBar;
 use crate::widgets::progress_bar::ProgressMessage;
@@ -29,8 +27,8 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Label};
 
-    use crate::dragon_display::setup::config::Campaign;
-    use crate::dragon_display::setup::AddRemoveMessage;
+    use crate::config::Campaign;
+    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]

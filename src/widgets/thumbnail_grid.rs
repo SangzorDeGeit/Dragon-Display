@@ -1,13 +1,13 @@
 use std::fs::{read_dir, DirEntry};
 use std::io::Error;
 
-use crate::dragon_display::setup::config::Campaign;
+use crate::config::Campaign;
 use crate::ui::control_window::UpdateDisplayMessage;
 use crate::widgets::thumbnail::DdThumbnail;
 use crate::APP_ID;
 use async_channel::Sender;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use gtk::{glib, Box, Grid};
+use gtk::{glib, Grid};
 use gtk::{prelude::*, ToggleButton};
 
 mod imp {
@@ -19,7 +19,7 @@ mod imp {
     use gtk::{glib, template_callbacks, Box, CompositeTemplate, Grid};
     use gtk::{prelude::*, Button};
 
-    use crate::dragon_display::setup::config::Campaign;
+    use crate::config::Campaign;
     use crate::ui::control_window::UpdateDisplayMessage;
 
     // Object holding the state

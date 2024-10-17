@@ -3,7 +3,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
-use crate::dragon_display::setup::config::Campaign;
+use crate::config::Campaign;
 use crate::ui::control_window::UpdateDisplayMessage;
 
 use super::thumbnail_grid::DdThumbnailGrid;
@@ -52,6 +52,11 @@ mod imp {
 
         #[template_callback]
         fn handle_rotate_180(&self, _: Button) {
+            todo!("implement this function");
+        }
+
+        #[template_callback]
+        fn handle_fit(&self, _: Button) {
             todo!("implement this function");
         }
     }

@@ -5,8 +5,8 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::SelectMessage;
+use crate::config::Campaign;
+use crate::setup_manager::SelectMessage;
 use crate::widgets::campaign_button::CampaignButton;
 
 mod imp {
@@ -18,8 +18,8 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Grid, Label};
 
-    use crate::dragon_display::setup::config::Campaign;
-    use crate::dragon_display::setup::SelectMessage;
+    use crate::config::Campaign;
+    use crate::setup_manager::SelectMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]

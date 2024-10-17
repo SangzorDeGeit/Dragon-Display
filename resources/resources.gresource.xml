@@ -17,5 +17,6 @@
         <file compressed="true" preprocess="xml-stripblanks">image_page.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">thumbnail_grid.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">thumbnail.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">display_window.ui</file>
     </gresource>
 </gresources>

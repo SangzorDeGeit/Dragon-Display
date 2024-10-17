@@ -5,7 +5,7 @@ use gtk::{
 };
 use gtk::{prelude::*, ListView};
 
-use crate::dragon_display::setup::google_drive::FolderResult;
+use crate::google_drive::FolderResult;
 
 use super::google_folder_object::GoogleFolderObject;
 

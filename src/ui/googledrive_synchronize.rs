@@ -5,8 +5,8 @@ use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use std::io::Error;
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::google_drive::synchronize_files;
+use crate::config::Campaign;
+use crate::google_drive::synchronize_files;
 use crate::runtime;
 use crate::widgets::progress_bar::DdProgressBar;
 
@@ -20,7 +20,7 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, CompositeTemplate};
 
-    use crate::dragon_display::setup::config::Campaign;
+    use crate::config::Campaign;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]

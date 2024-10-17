@@ -5,11 +5,14 @@ use gtk::prelude::*;
 use gtk::{gio, glib};
 
 //imported modules
-pub mod dragon_display;
+pub mod config;
+pub mod google_drive;
+pub mod program_manager;
+pub mod setup_manager;
 pub mod ui;
 pub mod widgets;
 
-use dragon_display::setup::select_campaign;
+use setup_manager::select_campaign;
 use tokio::runtime::Runtime;
 
 pub const APP_ID: &str = "com.github.SangzorDeGeit.Dragon-Display";

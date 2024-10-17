@@ -1,15 +1,16 @@
 use adw::Application;
 use async_channel::Sender;
+use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
-use gtk::{prelude::*, Label};
 use std::io::Error;
 
-use crate::dragon_display::setup::config::Campaign;
+use crate::config::Campaign;
 use crate::widgets::image_page::DdImagePage;
 
 pub enum UpdateDisplayMessage {
     Image { picture_path: String },
+    Refresh,
     Error { error: Error, fatal: bool },
 }
 
@@ -66,7 +67,12 @@ mod imp {
     impl ControlWindow {
         #[template_callback]
         fn handle_refresh(&self, _: Button) {
-            todo!("implement this function");
+            self.sender
+                .borrow()
+                .clone()
+                .expect("Sender not found")
+                .send_blocking(UpdateDisplayMessage::Refresh)
+                .expect("Channel closed");
         }
 
         #[template_callback]

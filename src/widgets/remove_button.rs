@@ -5,13 +5,14 @@ use gtk::{
 };
 use std::cell::RefCell;
 
-use crate::dragon_display::setup::{config::Campaign, AddRemoveMessage};
+use crate::config::Campaign;
+use crate::setup_manager::AddRemoveMessage;
 
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
 mod imp {
-    use crate::dragon_display::setup::AddRemoveMessage;
+    use crate::setup_manager::AddRemoveMessage;
 
     use super::*;
     // Object holding the campaign

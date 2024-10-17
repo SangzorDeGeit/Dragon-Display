@@ -7,8 +7,8 @@ use std::cell::RefCell;
 use std::fs;
 use std::io::{Error, ErrorKind};
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::SelectMessage;
+use crate::config::Campaign;
+use crate::setup_manager::SelectMessage;
 
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;

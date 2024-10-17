@@ -5,8 +5,8 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::dragon_display::setup::config::Campaign;
-use crate::dragon_display::setup::AddRemoveMessage;
+use crate::config::Campaign;
+use crate::setup_manager::AddRemoveMessage;
 use crate::widgets::remove_button::RemoveButton;
 
 mod imp {
@@ -18,8 +18,8 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Grid};
 
-    use crate::dragon_display::setup::config::Campaign;
-    use crate::dragon_display::setup::AddRemoveMessage;
+    use crate::config::Campaign;
+    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]

@@ -1,21 +1,20 @@
-pub mod config;
-pub mod google_drive;
+use std::{
+    fs,
+    io::{Error, ErrorKind},
+};
 
-use std::fs;
-use std::io::{Error, ErrorKind};
-
+use super::config::{remove_campaign_from_config, write_campaign_to_config};
 use adw::prelude::*;
 use async_channel::Sender;
-use config::{remove_campaign_from_config, write_campaign_to_config};
-use gdk4::Monitor;
 use glib::clone;
 use gtk::glib;
 use gtk::glib::spawn_future_local;
 
-use config::{Campaign, SynchronizationOption};
+use crate::config;
+use crate::config::{Campaign, SynchronizationOption};
+use crate::program_manager::dragon_display;
 
 use crate::ui::add_campaign::AddCampaignWindow;
-use crate::ui::control_window::ControlWindow;
 use crate::ui::error_dialog::ErrorDialog;
 use crate::ui::googledrive_connect::GoogledriveConnectWindow;
 use crate::ui::googledrive_select_folder::DdGoogleFolderSelectWindow;
@@ -24,8 +23,6 @@ use crate::ui::remove_campaign::RemoveCampaignWindow;
 use crate::ui::remove_confirm::RemoveConfirmWindow;
 use crate::ui::select_campaign::SelectCampaignWindow;
 use crate::ui::select_monitor::SelectMonitorWindow;
-
-use super::main_program::ui::display::display_window;
 
 /// The messages that the select_campaign_window can send
 pub enum SelectMessage {
@@ -306,7 +303,7 @@ fn select_monitor(app: &adw::Application, campaign: Campaign) {
             match message {
                 Ok(monitor) => {
                     window.destroy();
-                    start_dragon_display(&app, campaign.clone(), monitor)
+                    dragon_display(&app, campaign.clone(), monitor)
                 },
                 Err(error) => {
                     ErrorDialog::new(&app, error, true).present();
@@ -315,18 +312,4 @@ fn select_monitor(app: &adw::Application, campaign: Campaign) {
             }
         }
     }));
-}
-
-fn start_dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monitor) {
-    let (sender, receiver) = async_channel::unbounded();
-
-    let control_window = ControlWindow::new(&app, campaign, sender);
-    control_window.present();
-    let display_window = display_window(&app, receiver);
-    display_window.present();
-    display_window.fullscreen_on_monitor(&monitor);
-
-    control_window.connect_destroy(move |_| {
-        display_window.destroy();
-    });
 }

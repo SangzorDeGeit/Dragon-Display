@@ -6,8 +6,8 @@ use gtk::{gio, glib};
 use std::env;
 use std::io::{Error, ErrorKind};
 
-use crate::dragon_display::setup::config::read_campaign_from_config;
-use crate::dragon_display::setup::AddRemoveMessage;
+use crate::config::read_campaign_from_config;
+use crate::setup_manager::AddRemoveMessage;
 
 mod imp {
     use std::cell::RefCell;
@@ -25,8 +25,8 @@ mod imp {
     };
     use gtk::{prelude::*, ResponseType};
 
-    use crate::dragon_display::setup::config::{Campaign, SynchronizationOption};
-    use crate::dragon_display::setup::AddRemoveMessage;
+    use crate::config::{Campaign, SynchronizationOption};
+    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
