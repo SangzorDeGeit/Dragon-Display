@@ -5,6 +5,7 @@ pub mod error_dialog;
 pub mod googledrive_connect;
 pub mod googledrive_select_folder;
 pub mod googledrive_synchronize;
+pub mod options;
 pub mod remove_campaign;
 pub mod remove_confirm;
 pub mod select_campaign;

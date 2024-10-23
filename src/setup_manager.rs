@@ -10,9 +10,9 @@ use glib::clone;
 use gtk::glib;
 use gtk::glib::spawn_future_local;
 
-use crate::config;
 use crate::config::{Campaign, SynchronizationOption};
 use crate::program_manager::dragon_display;
+use crate::{config, program_manager::refresh};
 
 use crate::ui::add_campaign::AddCampaignWindow;
 use crate::ui::error_dialog::ErrorDialog;
@@ -39,10 +39,13 @@ pub enum AddRemoveMessage {
     Error { error: Error, fatal: bool },
 }
 
+/// The function that calls the connect/reconnect part of the program
+/// Used so that the connect/reconnect function can redirect to the correct part of the program
 pub enum CallingFunction {
     AddCampaign,
     SelectPath,
     Synchronize,
+    Refresh { sender: Sender<()> },
 }
 
 /// Make and present the window to select a campaign
@@ -157,7 +160,7 @@ fn add_campaign(app: &adw::Application) {
                     window.destroy();
                     match campaign.sync_option {
                         SynchronizationOption::None => write_campaign(&app, campaign),
-                        SynchronizationOption::GoogleDrive {..} => googledrive_connect(&app, campaign, CallingFunction::AddCampaign, None),
+                        SynchronizationOption::GoogleDrive {..} => googledrive_connect(&app, campaign, CallingFunction::AddCampaign),
                     }
                 }
                 AddRemoveMessage::Cancel => {
@@ -183,13 +186,13 @@ pub fn googledrive_connect(
     app: &adw::Application,
     campaign: Campaign,
     calling_function: CallingFunction,
-    refresh_sender: Option<Sender<()>>,
 ) {
     let (sender, receiver) = async_channel::bounded(1);
     let reconnect = match calling_function {
         CallingFunction::SelectPath => true,
         CallingFunction::Synchronize => true,
         CallingFunction::AddCampaign => false,
+        CallingFunction::Refresh { .. } => true,
     };
     let window = GoogledriveConnectWindow::new(&app, campaign.clone(), sender, reconnect);
     window.present();
@@ -198,12 +201,13 @@ pub fn googledrive_connect(
         clone!(@weak window, @weak app, @strong campaign => async move {
             while let Ok(message) = receiver.recv().await {
                 match message {
-                    AddRemoveMessage::Campaign { campaign } => {
+                    AddRemoveMessage::Campaign { campaign: new_campaign } => {
                         window.destroy();
                         match calling_function {
-                            CallingFunction::AddCampaign => googledrive_select_folder(&app, campaign),
-                            CallingFunction::SelectPath => googledrive_select_folder(&app, campaign),
-                            CallingFunction::Synchronize => googledrive_synchronize(&app, campaign),
+                            CallingFunction::AddCampaign => googledrive_select_folder(&app, new_campaign),
+                            CallingFunction::SelectPath => googledrive_select_folder(&app, new_campaign),
+                            CallingFunction::Synchronize => googledrive_synchronize(&app, new_campaign),
+                            CallingFunction::Refresh{ sender: ref refresh_sender } => refresh(&app, new_campaign, refresh_sender.clone()),
                         }
                     }
                     AddRemoveMessage::Cancel => {
@@ -212,6 +216,7 @@ pub fn googledrive_connect(
                             CallingFunction::AddCampaign => select_campaign(&app),
                             CallingFunction::SelectPath => googledrive_select_folder(&app, campaign.clone()),
                             CallingFunction::Synchronize => googledrive_synchronize(&app, campaign.clone()),
+                            CallingFunction::Refresh{ sender: ref refresh_sender } => refresh(&app, campaign.clone(), refresh_sender.clone()),
                         }
                     }
                     AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
@@ -242,7 +247,7 @@ pub fn googledrive_select_folder(app: &adw::Application, campaign: Campaign) {
                     match error.kind() {
                         ErrorKind::ConnectionRefused => {
                             window.destroy();
-                            googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath, None);
+                            googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath);
                         },
                         _ => ErrorDialog::new(&app, error, fatal).present(),
                     }
@@ -284,7 +289,7 @@ fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
                 Err(e) => match e.kind() {
                     ErrorKind::ConnectionRefused => {
                         window.destroy();
-                        googledrive_connect(&app, campaign.clone(), CallingFunction::Synchronize, None)
+                        googledrive_connect(&app, campaign.clone(), CallingFunction::Synchronize)
                     }
                     _ => ErrorDialog::new(&app, e, false).present(),
                 },

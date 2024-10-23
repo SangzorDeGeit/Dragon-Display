@@ -16,7 +16,10 @@
         <file compressed="true" preprocess="xml-stripblanks">control_window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">image_page.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">thumbnail_grid.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">thumbnail.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">thumbnail_image.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">thumbnail_video.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">display_window.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">options.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">video_page.ui</file>
     </gresource>
 </gresources>

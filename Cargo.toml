@@ -24,6 +24,9 @@ futures = "0.3.29"
 async-channel = "2.3.1"
 async-recursion = "1.1.1"
 reqwest = {version="0.10.10", features=["json", "blocking"]}
+gstreamer = "0.23"
+gstreamer-video = "0.23"
+gstreamer-app = "0.23"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

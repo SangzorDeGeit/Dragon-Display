@@ -9,6 +9,7 @@ use std::{
 use toml::to_string;
 
 pub const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
+pub const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "webm", "mkv", "avi", "mov", "flv", "ogg"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH: u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 pub const SYNCHRONIZATION_OPTIONS: [&str; 2] = ["None", "Google Drive"];
@@ -328,10 +329,10 @@ fn check_save_removal(campaign_path: &str) -> Result<(), io::Error> {
             }
         };
 
-        if !IMAGE_EXTENSIONS.contains(&extension) {
+        if !IMAGE_EXTENSIONS.contains(&extension) && !VIDEO_EXTENSIONS.contains(&extension) {
             return Err(Error::new(
                 ErrorKind::NotFound,
-                "Could not remove image folder: found non-image files in the campaign image folder",
+                "Could not remove image folder: found non-image/non-video files in the campaign image folder",
             ));
         }
     }

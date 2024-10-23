@@ -1,17 +1,18 @@
 use adw::Application;
-use gtk::prelude::ObjectExt;
-use gtk::{gio, glib};
+use async_channel::Receiver;
+use glib::spawn_future_local;
+use gtk::gio::File;
+use gtk::prelude::*;
+use gtk::subclass::prelude::ObjectSubclassIsExt;
+use gtk::{gio, glib, Picture, Video};
+
+use crate::program_manager::DisplayWindowMessage;
 
 mod imp {
-    use async_channel::Receiver;
-    use std::cell::RefCell;
-
     use glib::subclass::InitializingObject;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, Button, CompositeTemplate};
-
-    use crate::ui::control_window::UpdateDisplayMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -19,14 +20,13 @@ mod imp {
     pub struct DdDisplayWindow {
         #[template_child]
         pub content: TemplateChild<Box>,
-        pub receiver: RefCell<Option<Receiver<UpdateDisplayMessage>>>,
     }
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
     impl ObjectSubclass for DdDisplayWindow {
         // `NAME` needs to match `class` attribute of template
-        const NAME: &'static str = "DdDdDisplayWindow";
+        const NAME: &'static str = "DdDisplayWindow";
         type Type = super::DdDisplayWindow;
         type ParentType = gtk::ApplicationWindow;
 
@@ -67,10 +67,41 @@ glib::wrapper! {
 }
 
 impl DdDisplayWindow {
-    pub fn new(app: &Application) -> Self {
+    pub fn new(app: &Application, receiver: Receiver<DisplayWindowMessage>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
+        let imp = object.imp();
+        Self::await_updates(imp, receiver);
+
         object
+    }
+
+    fn await_updates(imp: &imp::DdDisplayWindow, receiver: Receiver<DisplayWindowMessage>) {
+        let content = imp.content.clone();
+        spawn_future_local(async move {
+            while let Ok(message) = receiver.recv().await {
+                if let Some(child) = content.first_child() {
+                    content.remove(&child);
+                }
+                match message {
+                    DisplayWindowMessage::Image { picture_path } => {
+                        let file = File::for_path(picture_path);
+                        let image = Picture::builder().file(&file).build();
+                        content.append(&image);
+                    }
+                    DisplayWindowMessage::Video { video_path } => {
+                        let file = File::for_path(video_path);
+                        let video = Video::builder()
+                            .loop_(true)
+                            .autoplay(true)
+                            .file(&file)
+                            .sensitive(false)
+                            .build();
+                        content.append(&video);
+                    }
+                }
+            }
+        });
     }
 }

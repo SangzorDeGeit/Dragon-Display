@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xml>
 <interface>
-    <template class="DdImagePage" parent="GtkWidget">
+    <template class="DdVideoPage" parent="GtkWidget">
         <child>
             <object class="GtkBox" id="content">
                 <property name="orientation">horizontal</property>
@@ -28,18 +28,6 @@
                             <object class="GtkButton">
                                 <signal name="clicked" handler="handle_rotate_180" swapped="true" />
                                 <property name="label">Rotate 180&#176;</property>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkButton">
-                                <signal name="clicked" handler="handle_fit" swapped="true" />
-                                <property name="label">Fit</property>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkButton">
-                                <signal name="clicked" handler="handle_auto_rotate" swapped="true" />
-                                <property name="label">Auto rotate</property>
                             </object>
                         </child>
                         <!-- End Functional buttons -->

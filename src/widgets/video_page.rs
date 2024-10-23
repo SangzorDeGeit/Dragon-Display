@@ -17,19 +17,19 @@ mod imp {
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
-    #[template(resource = "/dragon/display/image_page.ui")]
-    pub struct DdImagePage {
+    #[template(resource = "/dragon/display/video_page.ui")]
+    pub struct DdVideoPage {
         #[template_child]
         pub content: TemplateChild<Box>,
     }
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
-    impl ObjectSubclass for DdImagePage {
+    impl ObjectSubclass for DdVideoPage {
         // `NAME` needs to match `class` attribute of template
-        const NAME: &'static str = "DdImagePage";
+        const NAME: &'static str = "DdVideoPage";
         type ParentType = gtk::Widget;
-        type Type = super::DdImagePage;
+        type Type = super::DdVideoPage;
 
         fn class_init(klass: &mut Self::Class) {
             Button::ensure_type();
@@ -45,7 +45,7 @@ mod imp {
     }
 
     #[template_callbacks]
-    impl DdImagePage {
+    impl DdVideoPage {
         #[template_callback]
         fn handle_rotate_90(&self, _: Button) {
             todo!("implement this function");
@@ -55,20 +55,10 @@ mod imp {
         fn handle_rotate_180(&self, _: Button) {
             todo!("implement this function");
         }
-
-        #[template_callback]
-        fn handle_fit(&self, _: Button) {
-            todo!("implement this function");
-        }
-
-        #[template_callback]
-        fn handle_auto_rotate(&self, _: Button) {
-            todo!("impelment this function");
-        }
     }
 
     // Trait shared by all GObjects
-    impl ObjectImpl for DdImagePage {
+    impl ObjectImpl for DdVideoPage {
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -82,22 +72,22 @@ mod imp {
     }
 
     // Trait shared by all widgets
-    impl WidgetImpl for DdImagePage {}
+    impl WidgetImpl for DdVideoPage {}
 }
 
 glib::wrapper! {
-    pub struct DdImagePage(ObjectSubclass<imp::DdImagePage>)
+    pub struct DdVideoPage(ObjectSubclass<imp::DdVideoPage>)
         @extends gtk::Widget,
             @implements gtk::Actionable, gtk::Accessible, gtk::Buildable,
                         gtk::ConstraintTarget;
 }
 
-impl DdImagePage {
+impl DdVideoPage {
     pub fn new(campaign: Campaign, sender: Sender<ControlWindowMessage>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        let thumbnail_widget = DdThumbnailGrid::new(campaign, sender, Page::IMAGE);
+        let thumbnail_widget = DdThumbnailGrid::new(campaign, sender, Page::VIDEO);
         thumbnail_widget.set_halign(gtk::Align::Fill);
         thumbnail_widget.set_valign(gtk::Align::Fill);
         thumbnail_widget.set_hexpand(true);

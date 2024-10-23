@@ -1,14 +1,17 @@
 use std::fs::{read_dir, DirEntry};
 use std::io::Error;
 
-use crate::config::Campaign;
-use crate::ui::control_window::UpdateDisplayMessage;
-use crate::widgets::thumbnail::DdThumbnail;
+use crate::config::{Campaign, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::program_manager::ControlWindowMessage;
+use crate::ui::control_window::Page;
+use crate::widgets::thumbnail_image::DdThumbnailImage;
 use crate::APP_ID;
 use async_channel::Sender;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{glib, Grid};
 use gtk::{prelude::*, ToggleButton};
+
+use super::thumbnail_video::DdThumbnailVideo;
 
 mod imp {
     use async_channel::Sender;
@@ -20,7 +23,7 @@ mod imp {
     use gtk::{prelude::*, Button};
 
     use crate::config::Campaign;
-    use crate::ui::control_window::UpdateDisplayMessage;
+    use crate::program_manager::ControlWindowMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -37,7 +40,7 @@ mod imp {
         pub campaign: RefCell<Campaign>,
         pub current_grid_nr: Cell<usize>,
         pub page_vec: RefCell<Vec<Grid>>,
-        pub sender: RefCell<Option<Sender<UpdateDisplayMessage>>>,
+        pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -127,33 +130,34 @@ glib::wrapper! {
 }
 
 impl DdThumbnailGrid {
-    pub fn new(campaign: Campaign, sender: Sender<UpdateDisplayMessage>) -> Self {
-        println!("setup thumbnail grid");
+    pub fn new(campaign: Campaign, sender: Sender<ControlWindowMessage>, page: Page) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
         imp.campaign.replace(campaign);
         imp.sender.replace(Some(sender));
-        Self::initialize(imp);
+        Self::initialize(imp, page);
 
         object
     }
 
-    fn initialize(imp: &imp::DdThumbnailGrid) {
+    fn initialize(imp: &imp::DdThumbnailGrid, page: Page) {
         let sender = imp.sender.borrow().clone().expect("Sender not found");
         let settings = gtk::gio::Settings::new(APP_ID);
-        let column = settings.int("imagegrid-column-amount");
-        let row = settings.int("imagegrid-row-amount");
-        assert!(
-            column > 0 && row > 0,
-            "image row or column is not greater then 0"
-        );
+        let mut column = settings.int("imagegrid-column-amount");
+        let mut row = settings.int("imagegrid-row-amount");
+        if column <= 0 {
+            column = 3;
+        }
+        if row <= 0 {
+            row = 3;
+        }
         let campaign_path = imp.campaign.borrow().clone().path;
         let files = match read_dir(campaign_path) {
             Ok(f) => f,
             Err(e) => {
                 sender
-                    .send_blocking(UpdateDisplayMessage::Error {
+                    .send_blocking(ControlWindowMessage::Error {
                         error: e,
                         fatal: true,
                     })
@@ -191,16 +195,37 @@ impl DdThumbnailGrid {
                 Ok(f) => f,
                 Err(_) => continue,
             };
-            let filling_grid = page_vec
-                .get(filling_page)
-                .expect("Not enough pages created");
-            let thumbnail = DdThumbnail::new(&file, sender.clone(), prev_button);
-            thumbnail.set_halign(gtk::Align::Fill);
-            thumbnail.set_valign(gtk::Align::Fill);
-            thumbnail.set_hexpand(true);
-            thumbnail.set_vexpand(true);
-            prev_button = Some(thumbnail.get_togglebutton());
-            filling_grid.attach(&thumbnail, i % column, i / column, 1, 1);
+            let file_path = file.path();
+            let extension = match file_path.extension() {
+                Some(e) => e,
+                None => continue,
+            };
+            let extension = extension.to_str().expect("Could not convert to str");
+            if IMAGE_EXTENSIONS.contains(&extension) && matches!(page, Page::IMAGE) {
+                let thumbnail = DdThumbnailImage::new(&file, sender.clone(), prev_button);
+                let filling_grid = page_vec
+                    .get(filling_page)
+                    .expect("Not enough pages created");
+                thumbnail.set_halign(gtk::Align::Fill);
+                thumbnail.set_valign(gtk::Align::Fill);
+                thumbnail.set_hexpand(true);
+                thumbnail.set_vexpand(true);
+                prev_button = Some(thumbnail.get_togglebutton());
+                filling_grid.attach(&thumbnail, i % column, i / column, 1, 1);
+            } else if VIDEO_EXTENSIONS.contains(&extension) && matches!(page, Page::VIDEO) {
+                let thumbnail = DdThumbnailVideo::new(&file, sender.clone(), prev_button);
+                let filling_grid = page_vec
+                    .get(filling_page)
+                    .expect("Not enough pages created");
+                thumbnail.set_halign(gtk::Align::Fill);
+                thumbnail.set_valign(gtk::Align::Fill);
+                thumbnail.set_hexpand(true);
+                thumbnail.set_vexpand(true);
+                prev_button = Some(thumbnail.get_togglebutton());
+                filling_grid.attach(&thumbnail, i % column, i / column, 1, 1);
+            } else {
+                continue;
+            }
             i += 1;
             if i % (files_per_page as i32) == 0 {
                 i = 0;

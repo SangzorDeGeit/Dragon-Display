@@ -1,4 +1,3 @@
-use crate::ui::control_window::UpdateDisplayMessage;
 use async_channel::Sender;
 use gtk::{
     glib::{self, clone},
@@ -9,6 +8,8 @@ use std::fs::DirEntry;
 
 use gtk::subclass::prelude::*;
 
+use crate::program_manager::ControlWindowMessage;
+
 mod imp {
 
     use glib::subclass::InitializingObject;
@@ -17,8 +18,8 @@ mod imp {
     use super::*;
     // Object holding the campaign
     #[derive(CompositeTemplate, Default)]
-    #[template(resource = "/dragon/display/thumbnail.ui")]
-    pub struct DdThumbnail {
+    #[template(resource = "/dragon/display/thumbnail_image.ui")]
+    pub struct DdThumbnailImage {
         #[template_child]
         pub button: TemplateChild<ToggleButton>,
         #[template_child]
@@ -29,9 +30,9 @@ mod imp {
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
-    impl ObjectSubclass for DdThumbnail {
-        const NAME: &'static str = "DdThumbnail";
-        type Type = super::DdThumbnail;
+    impl ObjectSubclass for DdThumbnailImage {
+        const NAME: &'static str = "DdThumbnailImage";
+        type Type = super::DdThumbnailImage;
         type ParentType = gtk::Widget;
 
         fn class_init(klass: &mut Self::Class) {
@@ -45,7 +46,7 @@ mod imp {
     }
 
     // Trait shared by all GObjects
-    impl ObjectImpl for DdThumbnail {
+    impl ObjectImpl for DdThumbnailImage {
         fn constructed(&self) {
             self.parent_constructed();
         }
@@ -58,19 +59,19 @@ mod imp {
     }
 
     // Trait shared by all widgets
-    impl WidgetImpl for DdThumbnail {}
+    impl WidgetImpl for DdThumbnailImage {}
 }
 
 glib::wrapper! {
-    pub struct DdThumbnail(ObjectSubclass<imp::DdThumbnail>) @extends gtk::Widget,
+    pub struct DdThumbnailImage(ObjectSubclass<imp::DdThumbnailImage>) @extends gtk::Widget,
             @implements gtk::Actionable, gtk::Accessible, gtk::Buildable,
                         gtk::ConstraintTarget;
 }
 
-impl DdThumbnail {
+impl DdThumbnailImage {
     pub fn new(
         file: &DirEntry,
-        sender: Sender<UpdateDisplayMessage>,
+        sender: Sender<ControlWindowMessage>,
         prev_button: Option<ToggleButton>,
     ) -> Self {
         let object = glib::Object::new::<Self>();
@@ -85,7 +86,7 @@ impl DdThumbnail {
 
         imp.button.connect_clicked(clone!(@strong path => move |_| {
             sender
-                .send_blocking(UpdateDisplayMessage::Image {
+                .send_blocking(ControlWindowMessage::Image {
                     picture_path: path.to_string(),
                 })
                 .expect("Channel closed");

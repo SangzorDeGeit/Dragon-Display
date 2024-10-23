@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xml>
 <interface>
-    <template class="DdThumbnail" parent="GtkWidget">
+    <template class="DdThumbnailVideo" parent="GtkWidget">
         <child>
             <object class="GtkToggleButton" id="button">
                 <property name="active">false</property>

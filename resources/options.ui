@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdOptionsWindow" parent="GtkApplicationWindow">
+        <property name="title">Options</property>
+        <child>
+            <object class="GtkGrid">
+                <property name="halign">fill</property>
+                <property name="orientation">vertical</property>
+                <property name="margin_top">6</property>
+                <property name="margin_bottom">6</property>
+                <property name="margin_start">6</property>
+                <property name="margin_end">6</property>
+                <property name="row-spacing">6</property>
+                <property name="column-spacing">6</property>
+                <child>
+                    <object class="GtkLabel">
+                        <property name="label">columns</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">0</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkSpinButton" id="column">
+                        <property name="numeric">true</property>
+                        <property name="wrap">true</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">0</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkLabel">
+                        <property name="label">rows</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkSpinButton" id="row">
+                        <property name="numeric">true</property>
+                        <property name="wrap">true</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton">
+                        <signal name="clicked" handler="handle_default" swapped="true" />
+                        <property name="label">Default</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">2</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton">
+                        <signal name="clicked" handler="handle_confirm" swapped="true" />
+                        <property name="label">Confirm</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">2</property>
+                        </layout>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

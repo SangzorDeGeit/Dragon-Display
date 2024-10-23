@@ -3,15 +3,15 @@ use async_channel::Sender;
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
-use std::io::Error;
 
 use crate::config::Campaign;
+use crate::program_manager::ControlWindowMessage;
 use crate::widgets::image_page::DdImagePage;
+use crate::widgets::video_page::DdVideoPage;
 
-pub enum UpdateDisplayMessage {
-    Image { picture_path: String },
-    Refresh,
-    Error { error: Error, fatal: bool },
+pub enum Page {
+    IMAGE,
+    VIDEO,
 }
 
 mod imp {
@@ -20,11 +20,13 @@ mod imp {
 
     use async_channel::Sender;
     use glib::subclass::InitializingObject;
+    use gtk::glib::spawn_future_local;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Stack, StackSwitcher};
 
-    use super::UpdateDisplayMessage;
+    use crate::config::Campaign;
+    use crate::program_manager::ControlWindowMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -40,7 +42,8 @@ mod imp {
         pub videos: TemplateChild<Box>,
         #[template_child]
         pub vtts: TemplateChild<Box>,
-        pub sender: RefCell<Option<Sender<UpdateDisplayMessage>>>,
+        pub campaign: RefCell<Campaign>,
+        pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -67,17 +70,43 @@ mod imp {
     impl ControlWindow {
         #[template_callback]
         fn handle_refresh(&self, _: Button) {
+            // make async channel
+            let (refresh_sender, refresh_receiver) = async_channel::bounded(1);
+            // send refresh signal
             self.sender
                 .borrow()
                 .clone()
                 .expect("Sender not found")
-                .send_blocking(UpdateDisplayMessage::Refresh)
+                .send_blocking(ControlWindowMessage::Refresh {
+                    sender: refresh_sender,
+                })
                 .expect("Channel closed");
+            // await message
+            let obj = self.obj().clone();
+            spawn_future_local(async move {
+                while let Ok(_) = refresh_receiver.recv().await {
+                    obj.clone().refresh_widgets();
+                }
+            });
         }
 
         #[template_callback]
         fn handle_options(&self, _: Button) {
-            todo!("implement this function");
+            let (refresh_sender, refresh_receiver) = async_channel::bounded(1);
+            self.sender
+                .borrow()
+                .clone()
+                .expect("No sender found")
+                .send_blocking(ControlWindowMessage::Options {
+                    sender: refresh_sender,
+                })
+                .expect("Channel closed");
+            let obj = self.obj().clone();
+            spawn_future_local(async move {
+                while let Ok(_) = refresh_receiver.recv().await {
+                    obj.clone().refresh_widgets();
+                }
+            });
         }
     }
 
@@ -110,21 +139,45 @@ impl ControlWindow {
     pub fn new(
         app: &Application,
         campaign: Campaign,
-        sender: Sender<UpdateDisplayMessage>,
+        sender: Sender<ControlWindowMessage>,
     ) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
         let imp = object.imp();
+        imp.campaign.replace(campaign.clone());
         imp.sender.replace(Some(sender.clone()));
         imp.stackswitcher.set_stack(Some(&imp.stack));
-        let image_page = DdImagePage::new(campaign, sender);
+        let image_page = DdImagePage::new(campaign.clone(), sender.clone());
         image_page.set_halign(gtk::Align::Fill);
         image_page.set_valign(gtk::Align::Fill);
         image_page.set_hexpand(true);
         image_page.set_vexpand(true);
         imp.images.append(&image_page);
+        let video_page = DdVideoPage::new(campaign, sender);
+        video_page.set_halign(gtk::Align::Fill);
+        video_page.set_valign(gtk::Align::Fill);
+        video_page.set_hexpand(true);
+        video_page.set_vexpand(true);
+        imp.videos.append(&video_page);
 
         object
+    }
+
+    pub fn refresh_widgets(self) {
+        let imp = self.imp();
+        let sender = imp.sender.borrow().clone().expect("No sender found");
+        let image_page = DdImagePage::new(imp.campaign.borrow().clone(), sender);
+        image_page.set_halign(gtk::Align::Fill);
+        image_page.set_valign(gtk::Align::Fill);
+        image_page.set_hexpand(true);
+        image_page.set_vexpand(true);
+        imp.images
+            .remove(&imp.images.first_child().expect("No image page found"));
+        imp.images.append(&image_page);
+
+        // create new video page append it to the video box
+
+        // create new vtt page append it to the vtt box
     }
 }

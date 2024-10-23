@@ -17,8 +17,8 @@ use tokio::io::copy;
 use gtk::glib::{clone, spawn_future};
 
 use super::config::{Campaign, SynchronizationOption, IMAGE_EXTENSIONS};
-use crate::ui::googledrive_connect::InitializeMessage;
 use crate::widgets::progress_bar::ProgressMessage;
+use crate::{config::VIDEO_EXTENSIONS, ui::googledrive_connect::InitializeMessage};
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
@@ -365,6 +365,8 @@ pub async fn synchronize_files(
         );
     }
 
+    // a hashmap linking every name and file id
+    // the name is used for working locally, the file id is used for downloading from googledrive
     let mut drive_files = HashMap::new();
 
     let query = format!(
@@ -393,7 +395,9 @@ pub async fn synchronize_files(
         };
         for file in response.body {
             let file_extension = file.name.split('.').last().unwrap_or("");
-            if IMAGE_EXTENSIONS.contains(&file_extension) {
+            if IMAGE_EXTENSIONS.contains(&file_extension)
+                || VIDEO_EXTENSIONS.contains(&file_extension)
+            {
                 drive_files.insert(file.name, file.id);
             }
         }
