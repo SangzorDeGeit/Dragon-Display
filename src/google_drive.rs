@@ -138,9 +138,12 @@ pub async fn initialize_client(
         .get_access_token(&state_and_code.1, &state_and_code.0)
         .await
     {
-        Ok(result) => sender
-            .send_blocking(InitializeMessage::Token { token: result })
-            .expect("Drive Frontend channel closed"),
+        Ok(result) => {
+            println!("refresh expires in {}", result.refresh_token_expires_in);
+            sender
+                .send_blocking(InitializeMessage::Token { token: result })
+                .expect("Drive Frontend channel closed");
+        }
         Err(_) => sender
             .send_blocking(InitializeMessage::Error {
                 error: Error::new(
@@ -538,6 +541,10 @@ fn configure_environment() -> Result<(), io::Error> {
 /// takes in an old refresh and access token and returns a new one;
 async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
+    println!(
+        "refresh called old tokens: {}, {}",
+        access_token, refresh_token
+    );
     let token = google_drive_client.refresh_access_token().await;
 
     let token = match token {
@@ -550,5 +557,10 @@ async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<Strin
         }
     };
 
+    println!("new token: {}", &token.access_token);
+    println!(
+        "new refresh: {}, {}",
+        &token.refresh_token, &token.refresh_token_expires_in
+    );
     return Ok(token.access_token);
 }

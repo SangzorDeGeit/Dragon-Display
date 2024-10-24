@@ -30,6 +30,12 @@
                                 <property name="label">Rotate 180&#176;</property>
                             </object>
                         </child>
+                        <child>
+                            <object class="GtkToggleButton">
+                                <signal name="toggled" handler="handle_fit" swapped="true" />
+                                <property name="label">Fit to size</property>
+                            </object>
+                        </child>
                         <!-- End Functional buttons -->
                     </object>
                 </child>

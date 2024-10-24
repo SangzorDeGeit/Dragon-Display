@@ -9,6 +9,9 @@ use gtk::{gio, glib, Picture, Video};
 use crate::program_manager::DisplayWindowMessage;
 
 mod imp {
+
+    use std::cell::{Cell, RefCell};
+
     use glib::subclass::InitializingObject;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
@@ -20,6 +23,8 @@ mod imp {
     pub struct DdDisplayWindow {
         #[template_child]
         pub content: TemplateChild<Box>,
+        pub fit: Cell<bool>,
+        pub current_content: RefCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -79,6 +84,8 @@ impl DdDisplayWindow {
 
     fn await_updates(imp: &imp::DdDisplayWindow, receiver: Receiver<DisplayWindowMessage>) {
         let content = imp.content.clone();
+        let fit = imp.fit.clone();
+        let current_content = imp.current_content.clone();
         spawn_future_local(async move {
             while let Ok(message) = receiver.recv().await {
                 if let Some(child) = content.first_child() {
@@ -86,11 +93,27 @@ impl DdDisplayWindow {
                 }
                 match message {
                     DisplayWindowMessage::Image { picture_path } => {
+                        current_content.replace(picture_path.clone());
                         let file = File::for_path(picture_path);
                         let image = Picture::builder().file(&file).build();
+                        if fit.get() {
+                            image.set_content_fit(gtk::ContentFit::Fill);
+                        }
+                        content.append(&image);
+                    }
+                    DisplayWindowMessage::Fit { fit: f } => {
+                        fit.set(f);
+                        let file = File::for_path(current_content.borrow().clone());
+                        let image = Picture::builder().file(&file).build();
+                        if f {
+                            image.set_content_fit(gtk::ContentFit::Fill);
+                        } else {
+                            image.set_content_fit(gtk::ContentFit::Contain);
+                        }
                         content.append(&image);
                     }
                     DisplayWindowMessage::Video { video_path } => {
+                        current_content.replace(video_path.clone());
                         let file = File::for_path(video_path);
                         let video = Video::builder()
                             .loop_(true)

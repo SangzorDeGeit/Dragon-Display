@@ -16,11 +16,13 @@ use gtk::{glib::spawn_future_local, prelude::*};
 
 pub enum DisplayWindowMessage {
     Image { picture_path: String },
+    Fit { fit: bool },
     Video { video_path: String },
 }
 
 pub enum ControlWindowMessage {
     Image { picture_path: String },
+    Fit { fit: bool },
     Video { video_path: String },
     Refresh { sender: Sender<()> },
     Options { sender: Sender<()> },
@@ -44,6 +46,7 @@ pub fn dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monit
                 ControlWindowMessage::Image { picture_path } => display_sender
                     .send_blocking(DisplayWindowMessage::Image { picture_path })
                     .expect("Channel closed"),
+                ControlWindowMessage::Fit { fit } => display_sender.send_blocking(DisplayWindowMessage::Fit { fit }).expect("Channel closed"),
                 ControlWindowMessage::Video { video_path } => display_sender.send_blocking(DisplayWindowMessage::Video { video_path })
                     .expect("Channel closed"),
                 ControlWindowMessage::Refresh { sender } => refresh(&app, campaign.clone(), sender),

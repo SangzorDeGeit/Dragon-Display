@@ -11,12 +11,12 @@ use super::thumbnail_grid::DdThumbnailGrid;
 
 mod imp {
     use async_channel::Sender;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::io::{Error, ErrorKind};
 
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, Box, Button, CompositeTemplate};
+    use gtk::{glib, Box, Button, CompositeTemplate, ToggleButton};
     use gtk::{prelude::*, template_callbacks};
 
     use crate::program_manager::ControlWindowMessage;
@@ -30,6 +30,7 @@ mod imp {
         pub content: TemplateChild<Box>,
         pub thumbnail_grid: RefCell<Option<DdThumbnailGrid>>,
         pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
+        pub fit: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -42,6 +43,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             Button::ensure_type();
+            ToggleButton::ensure_type();
 
             klass.bind_template();
             klass.set_layout_manager_type::<gtk::BoxLayout>();
@@ -132,6 +134,22 @@ mod imp {
                         fatal: false,
                     })
                     .expect("Channel closed"),
+            }
+        }
+
+        #[template_callback]
+        fn handle_fit(&self, _: ToggleButton) {
+            let sender = self.sender.borrow().clone().expect("No sender found");
+            if self.fit.get() {
+                self.fit.set(false);
+                sender
+                    .send_blocking(ControlWindowMessage::Fit { fit: false })
+                    .expect("Channel closed");
+            } else {
+                self.fit.set(true);
+                sender
+                    .send_blocking(ControlWindowMessage::Fit { fit: true })
+                    .expect("Channel closed");
             }
         }
     }

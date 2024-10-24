@@ -19,7 +19,7 @@ use crate::program_manager::ControlWindowMessage;
 mod imp {
 
     use glib::subclass::InitializingObject;
-    use gtk::{CompositeTemplate, Image, Label, ToggleButton};
+    use gtk::{CompositeTemplate, Label, Picture, ToggleButton};
 
     use super::*;
     // Object holding the campaign
@@ -29,7 +29,7 @@ mod imp {
         #[template_child]
         pub button: TemplateChild<ToggleButton>,
         #[template_child]
-        pub icon: TemplateChild<Image>,
+        pub icon: TemplateChild<Picture>,
         #[template_child]
         pub label: TemplateChild<Label>,
     }
@@ -90,7 +90,7 @@ impl DdThumbnailVideo {
         imp.button.set_group(prev_button.as_ref());
 
         match create_thumbnail(&path) {
-            Ok(p) => imp.icon.set_from_pixbuf(Some(&p)),
+            Ok(p) => imp.icon.set_pixbuf(Some(&p)),
             Err(e) => {
                 let errormsg = format!(
                     "Failed to create thumbnail for {}: {}",

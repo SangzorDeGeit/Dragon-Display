@@ -1,5 +1,6 @@
 use async_channel::Sender;
 use gtk::{
+    gio::File,
     glib::{self, clone},
     subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
 };
@@ -16,7 +17,7 @@ mod imp {
     use std::rc::Rc;
 
     use glib::subclass::InitializingObject;
-    use gtk::{CompositeTemplate, Image, Label, ToggleButton};
+    use gtk::{CompositeTemplate, Label, Picture, ToggleButton};
 
     use super::*;
     // Object holding the campaign
@@ -26,7 +27,7 @@ mod imp {
         #[template_child]
         pub button: TemplateChild<ToggleButton>,
         #[template_child]
-        pub icon: TemplateChild<Image>,
+        pub icon: TemplateChild<Picture>,
         #[template_child]
         pub label: TemplateChild<Label>,
         pub selected: Rc<Cell<bool>>,
@@ -85,7 +86,8 @@ impl DdThumbnailImage {
         let name = file_name.to_str().expect("File has no filename");
         let file_path = file.path();
         let path = file_path.to_str().expect("No file path found").to_owned();
-        imp.icon.set_file(Some(path.as_str()));
+        let file = File::for_path(path.as_str());
+        imp.icon.set_file(Some(&file));
         imp.label.set_text(name);
         imp.button.set_group(prev_button.as_ref());
         imp.path.replace(path.clone());
