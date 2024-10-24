@@ -46,15 +46,7 @@ mod imp {
 
     #[template_callbacks]
     impl DdVideoPage {
-        #[template_callback]
-        fn handle_rotate_90(&self, _: Button) {
-            todo!("implement this function");
-        }
-
-        #[template_callback]
-        fn handle_rotate_180(&self, _: Button) {
-            todo!("implement this function");
-        }
+        // In here go the functional button functions
     }
 
     // Trait shared by all GObjects

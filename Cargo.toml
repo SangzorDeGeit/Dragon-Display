@@ -27,6 +27,7 @@ reqwest = {version="0.10.10", features=["json", "blocking"]}
 gstreamer = "0.23"
 gstreamer-video = "0.23"
 gstreamer-app = "0.23"
+image = "0.25.4"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

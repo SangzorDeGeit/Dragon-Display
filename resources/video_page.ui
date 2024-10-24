@@ -18,18 +18,6 @@
                         <property name="vexpand">true</property>
                         <property name="spacing">3</property>
                         <!-- Functional buttons -->
-                        <child>
-                            <object class="GtkButton">
-                                <signal name="clicked" handler="handle_rotate_90" swapped="true" />
-                                <property name="label">Rotate 90&#176;</property>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkButton">
-                                <signal name="clicked" handler="handle_rotate_180" swapped="true" />
-                                <property name="label">Rotate 180&#176;</property>
-                            </object>
-                        </child>
                         <!-- End Functional buttons -->
                     </object>
                 </child>

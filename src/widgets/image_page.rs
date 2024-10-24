@@ -10,10 +10,17 @@ use crate::ui::control_window::Page;
 use super::thumbnail_grid::DdThumbnailGrid;
 
 mod imp {
+    use async_channel::Sender;
+    use std::cell::RefCell;
+    use std::io::{Error, ErrorKind};
+
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, Button, CompositeTemplate};
     use gtk::{prelude::*, template_callbacks};
+
+    use crate::program_manager::ControlWindowMessage;
+    use crate::widgets::thumbnail_grid::DdThumbnailGrid;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -21,6 +28,8 @@ mod imp {
     pub struct DdImagePage {
         #[template_child]
         pub content: TemplateChild<Box>,
+        pub thumbnail_grid: RefCell<Option<DdThumbnailGrid>>,
+        pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -48,22 +57,82 @@ mod imp {
     impl DdImagePage {
         #[template_callback]
         fn handle_rotate_90(&self, _: Button) {
-            todo!("implement this function");
+            let sender = self.sender.borrow().clone().expect("No sender found");
+            let grid = match self.thumbnail_grid.borrow().clone() {
+                Some(g) => g,
+                None => return,
+            };
+            let path = match grid.get_selected_image() {
+                Some(p) => p,
+                None => return,
+            };
+            let img = match image::open(&path) {
+                Ok(img) => img,
+                Err(_) => {
+                    sender
+                        .send_blocking(ControlWindowMessage::Error {
+                            error: Error::new(
+                                ErrorKind::NotFound,
+                                "Current selected image does not exist anymore",
+                            ),
+                            fatal: false,
+                        })
+                        .expect("Channel closed");
+                    return;
+                }
+            };
+            let img = img.rotate90();
+            match img.save(&path) {
+                Ok(_) => sender
+                    .send_blocking(ControlWindowMessage::Image { picture_path: path })
+                    .expect("Channel closed"),
+                Err(_) => sender
+                    .send_blocking(ControlWindowMessage::Error {
+                        error: Error::new(ErrorKind::WriteZero, "Could not save rotated image"),
+                        fatal: false,
+                    })
+                    .expect("Channel closed"),
+            }
         }
 
         #[template_callback]
         fn handle_rotate_180(&self, _: Button) {
-            todo!("implement this function");
-        }
-
-        #[template_callback]
-        fn handle_fit(&self, _: Button) {
-            todo!("implement this function");
-        }
-
-        #[template_callback]
-        fn handle_auto_rotate(&self, _: Button) {
-            todo!("impelment this function");
+            let sender = self.sender.borrow().clone().expect("No sender found");
+            let grid = match self.thumbnail_grid.borrow().clone() {
+                Some(g) => g,
+                None => return,
+            };
+            let path = match grid.get_selected_image() {
+                Some(p) => p,
+                None => return,
+            };
+            let img = match image::open(&path) {
+                Ok(img) => img,
+                Err(_) => {
+                    sender
+                        .send_blocking(ControlWindowMessage::Error {
+                            error: Error::new(
+                                ErrorKind::NotFound,
+                                "Current selected image does not exist anymore",
+                            ),
+                            fatal: false,
+                        })
+                        .expect("Channel closed");
+                    return;
+                }
+            };
+            let img = img.rotate180();
+            match img.save(&path) {
+                Ok(_) => sender
+                    .send_blocking(ControlWindowMessage::Image { picture_path: path })
+                    .expect("Channel closed"),
+                Err(_) => sender
+                    .send_blocking(ControlWindowMessage::Error {
+                        error: Error::new(ErrorKind::WriteZero, "Could not save rotated image"),
+                        fatal: false,
+                    })
+                    .expect("Channel closed"),
+            }
         }
     }
 
@@ -97,12 +166,14 @@ impl DdImagePage {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
+        imp.sender.replace(Some(sender.clone()));
         let thumbnail_widget = DdThumbnailGrid::new(campaign, sender, Page::IMAGE);
         thumbnail_widget.set_halign(gtk::Align::Fill);
         thumbnail_widget.set_valign(gtk::Align::Fill);
         thumbnail_widget.set_hexpand(true);
         thumbnail_widget.set_vexpand(true);
         imp.content.append(&thumbnail_widget);
+        imp.thumbnail_grid.replace(Some(thumbnail_widget));
 
         object
     }

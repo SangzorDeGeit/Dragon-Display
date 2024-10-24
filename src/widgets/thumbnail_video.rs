@@ -89,8 +89,22 @@ impl DdThumbnailVideo {
         imp.label.set_text(name);
         imp.button.set_group(prev_button.as_ref());
 
-        let pixbuf = create_thumbnail(&path, sender.clone());
-        imp.icon.set_from_pixbuf(pixbuf.as_ref());
+        match create_thumbnail(&path) {
+            Ok(p) => imp.icon.set_from_pixbuf(Some(&p)),
+            Err(e) => {
+                let errormsg = format!(
+                    "Failed to create thumbnail for {}: {}",
+                    &path,
+                    e.to_string()
+                );
+                sender
+                    .send_blocking(ControlWindowMessage::Error {
+                        error: Error::new(std::io::ErrorKind::InvalidData, errormsg),
+                        fatal: false,
+                    })
+                    .expect("Channel closed");
+            }
+        };
 
         imp.button.connect_clicked(clone!(@strong path => move |_| {
             sender
@@ -109,7 +123,7 @@ impl DdThumbnailVideo {
     }
 }
 
-pub fn create_thumbnail(path: &str, sender: Sender<ControlWindowMessage>) -> Option<Pixbuf> {
+pub fn create_thumbnail(path: &str) -> Result<Pixbuf, Error> {
     // USE gstreamer to create the thumbnail image
     gstreamer::init().expect("Failed to initialize gstreamer");
     // make sure the pipeline format works with names that contain spaces
@@ -117,23 +131,12 @@ pub fn create_thumbnail(path: &str, sender: Sender<ControlWindowMessage>) -> Opt
     let pipeline_string = format!("filesrc location={} ! decodebin ! videoconvert ! video/x-raw,format=RGB ! videoscale ! videorate ! video/x-raw,framerate=1/1 ! appsink name=sink", pipeline_friendly_path);
     let pipeline = match parse::launch(&pipeline_string) {
         Ok(e) => e,
-        Err(e) => {
-            println!("error: {}", e);
-            sender
-                .send_blocking(ControlWindowMessage::Error {
-                    error: Error::new(
-                        std::io::ErrorKind::BrokenPipe,
-                        format!("Could not create a thumbnail for file: {} ", path),
-                    ),
-                    fatal: false,
-                })
-                .expect("Channel closed");
-            return None;
-        }
+        Err(e) => return Err(Error::new(std::io::ErrorKind::BrokenPipe, e.to_string())),
     };
-    pipeline
-        .set_state(gstreamer::State::Playing)
-        .expect("Could not start playing state");
+    match pipeline.set_state(gstreamer::State::Playing) {
+        Ok(_) => (),
+        Err(e) => return Err(Error::new(std::io::ErrorKind::BrokenPipe, e.to_string())),
+    }
 
     let appsink = pipeline
         .dynamic_cast::<gstreamer::Bin>()
@@ -144,31 +147,60 @@ pub fn create_thumbnail(path: &str, sender: Sender<ControlWindowMessage>) -> Opt
         .expect("Could not cast to AppSink");
 
     // Get a sample from the sink (end of the pipeline)
-    let sample = appsink.pull_sample().expect("Could not pull sample");
+    let sample = match appsink.pull_sample() {
+        Ok(s) => s,
+        Err(e) => return Err(Error::new(std::io::ErrorKind::BrokenPipe, e.to_string())),
+    };
     // get the raw video data from the sample
-    let buffer = sample.buffer().expect("Could not get sample buffer");
+    let buffer = match sample.buffer() {
+        Some(b) => b,
+        None => {
+            return Err(Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Could not get video data",
+            ))
+        }
+    };
     // get the metadata from the sample
-    let caps = sample.caps().expect("Could not get sample caps");
-    // get indexed metadata that contains the width and height
-    let video_info = gstreamer_video::VideoInfo::from_caps(caps).expect("Could not get video info");
+    let caps = match sample.caps() {
+        Some(c) => c,
+        None => {
+            return Err(Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Could not get metadata",
+            ))
+        }
+    };
+    // get all video frame properties
+    let video_info = match gstreamer_video::VideoInfo::from_caps(caps) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::new(std::io::ErrorKind::BrokenPipe, e.to_string())),
+    };
     let width = video_info.width() as i32;
     let height = video_info.height() as i32;
-    let stride = video_info
-        .stride()
-        .get(0)
-        .expect("Stride array did not contain any values");
-    let map = buffer
-        .map_readable()
-        .expect("Could not convert raw video data into readable");
+    let stride = match video_info.stride().get(0) {
+        Some(s) => *s,
+        None => 3 * width as i32,
+    };
+
+    let map = match buffer.map_readable() {
+        Ok(m) => m,
+        Err(_) => {
+            return Err(Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Could not convert raw video data into readable",
+            ))
+        }
+    };
     let data = map.as_slice();
 
-    return Some(Pixbuf::from_mut_slice(
+    return Ok(Pixbuf::from_mut_slice(
         data.to_vec(),
         gdk_pixbuf::Colorspace::Rgb,
         false,
         8,
         width,
         height,
-        *stride,
+        stride,
     ));
 }

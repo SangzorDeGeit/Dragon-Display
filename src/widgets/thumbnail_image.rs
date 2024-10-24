@@ -12,6 +12,9 @@ use crate::program_manager::ControlWindowMessage;
 
 mod imp {
 
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
     use glib::subclass::InitializingObject;
     use gtk::{CompositeTemplate, Image, Label, ToggleButton};
 
@@ -26,6 +29,8 @@ mod imp {
         pub icon: TemplateChild<Image>,
         #[template_child]
         pub label: TemplateChild<Label>,
+        pub selected: Rc<Cell<bool>>,
+        pub path: RefCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -83,14 +88,22 @@ impl DdThumbnailImage {
         imp.icon.set_file(Some(path.as_str()));
         imp.label.set_text(name);
         imp.button.set_group(prev_button.as_ref());
+        imp.path.replace(path.clone());
 
-        imp.button.connect_clicked(clone!(@strong path => move |_| {
-            sender
-                .send_blocking(ControlWindowMessage::Image {
-                    picture_path: path.to_string(),
-                })
-                .expect("Channel closed");
-        }));
+        let selected = imp.selected.clone();
+        imp.button
+            .connect_toggled(clone!(@strong path => move |button| {
+                if button.is_active() {
+                    selected.set(true);
+                sender
+                    .send_blocking(ControlWindowMessage::Image {
+                        picture_path: path.to_string(),
+                    })
+                    .expect("Channel closed");
+                } else {
+                    selected.set(false);
+                }
+            }));
 
         object
     }
@@ -98,5 +111,15 @@ impl DdThumbnailImage {
     pub fn get_togglebutton(&self) -> ToggleButton {
         let imp = self.imp();
         imp.button.clone()
+    }
+
+    pub fn get_path(&self) -> String {
+        let imp = self.imp();
+        imp.path.borrow().clone()
+    }
+
+    pub fn selected(&self) -> bool {
+        let imp = self.imp();
+        imp.selected.get()
     }
 }

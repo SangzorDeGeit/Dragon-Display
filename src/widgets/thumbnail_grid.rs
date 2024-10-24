@@ -242,4 +242,26 @@ impl DdThumbnailGrid {
             imp.main_box.remove(&imp.navigation_box.clone());
         }
     }
+
+    /// returns the selected image path
+    pub fn get_selected_image(&self) -> Option<String> {
+        for grid in self.imp().page_vec.borrow().clone() {
+            let mut child = grid
+                .first_child()?
+                .downcast::<DdThumbnailImage>()
+                .expect("Could not cast to thumbnail");
+            if child.selected() {
+                return Some(child.get_path());
+            }
+            while let Some(c) = child.next_sibling() {
+                child = c
+                    .downcast::<DdThumbnailImage>()
+                    .expect("Could not cast to thumbnail");
+                if child.selected() {
+                    return Some(child.get_path());
+                }
+            }
+        }
+        return None;
+    }
 }
