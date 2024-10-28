@@ -59,6 +59,7 @@ pub fn dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monit
         }
     }));
     control_window.connect_destroy(clone!(@strong app => move |_| {
+        display_window.destroy();
         app.quit();
     }));
 }

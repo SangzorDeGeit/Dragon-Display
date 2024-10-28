@@ -231,8 +231,8 @@ pub async fn get_folder_tree(
     let mut child_folders: usize = 0;
 
     configure_environment()?;
-    let mut access_token = folder_result.access_token.clone();
-    let refresh_token = folder_result.refresh_token.clone();
+    let mut access_token = folder_result.access_token;
+    let refresh_token = folder_result.refresh_token;
 
     let query = format!(
         "mimeType = 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
@@ -260,7 +260,7 @@ pub async fn get_folder_tree(
                 }
             }
         };
-        let mut id_name_map = folder_result.id_name_map.clone();
+        let mut id_name_map = folder_result.id_name_map;
         let mut children: Vec<String> = Vec::new();
         for file in response.body {
             child_folders += 1;
@@ -274,8 +274,8 @@ pub async fn get_folder_tree(
             })
             .expect("channel closed");
 
-        let mut id_child_map = folder_result.id_child_map.clone();
-        id_child_map.insert(folder_id.clone(), children.clone());
+        let mut id_child_map = folder_result.id_child_map;
+        id_child_map.insert(folder_id, children.clone());
 
         let mut folder_result = FolderResult {
             id_name_map,
@@ -376,8 +376,8 @@ pub async fn synchronize_files(
         "mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
         google_drive_sync_folder
     );
-    let google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
     for i in 0..2 {
+        let google_drive_client = Client::new_from_env(&access_token, &refresh_token).await;
         let request = google_drive_client
             .files()
             .list_all(
@@ -541,10 +541,6 @@ fn configure_environment() -> Result<(), io::Error> {
 /// takes in an old refresh and access token and returns a new one;
 async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
-    println!(
-        "refresh called old tokens: {}, {}",
-        access_token, refresh_token
-    );
     let token = google_drive_client.refresh_access_token().await;
 
     let token = match token {
@@ -557,10 +553,5 @@ async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<Strin
         }
     };
 
-    println!("new token: {}", &token.access_token);
-    println!(
-        "new refresh: {}, {}",
-        &token.refresh_token, &token.refresh_token_expires_in
-    );
     return Ok(token.access_token);
 }
