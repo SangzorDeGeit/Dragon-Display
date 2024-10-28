@@ -8,7 +8,6 @@
                 <property name="valign">fill</property>
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
-                <property name="height-request">400</property>
             </object>
         </child>
     </template>

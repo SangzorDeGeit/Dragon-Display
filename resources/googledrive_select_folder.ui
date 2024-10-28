@@ -27,44 +27,66 @@
                     </object>
                 </child>
                 <child>
-                    <object class="GtkBox" id="load_select_widget">
-                        <property name="halign">fill</property>
-                        <property name="valign">center</property>
-                        <property name="hexpand">true</property>
+                    <object class="GtkPaned">
                         <property name="orientation">vertical</property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkButton" id="refresh_button">
-                        <signal name="clicked" handler="handle_refresh" swapped="true" />
-                        <property name="label">Refresh</property>
-                        <property name="sensitive">false</property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkBox">
-                        <property name="halign">fill</property>
-                        <property name="valign">center</property>
-                        <property name="hexpand">true</property>
-                        <property name="orientation">horizontal</property>
-                        <property name="spacing">6</property>
-                        <child>
-                            <object class="GtkButton">
-                                <signal name="clicked" handler="handle_cancel" swapped="true" />
-                                <property name="label">Cancel</property>
+                        <property name="start-child">
+                            <object class="GtkBox" id="load_select_widget">
                                 <property name="halign">fill</property>
+                                <property name="valign">fill</property>
                                 <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="orientation">vertical</property>
                             </object>
-                        </child>
-                        <child>
-                            <object class="GtkButton" id="choose_button">
-                                <signal name="clicked" handler="handle_choose" swapped="true" />
-                                <property name="label">Choose</property>
+                        </property>
+                        <property name="end-child">
+                            <object class="GtkBox">
                                 <property name="halign">fill</property>
+                                <property name="valign">fill</property>
                                 <property name="hexpand">true</property>
-                                <property name="sensitive">false</property>
+                                <property name="vexpand">true</property>
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">6</property>
+                                <child>
+                                    <object class="GtkButton" id="refresh_button">
+                                        <signal name="clicked" handler="handle_refresh"
+                                            swapped="true" />
+                                        <property name="label">Refresh</property>
+                                        <property name="sensitive">false</property>
+                                    </object>
+                                </child>
+                                <child>
+                                    <object class="GtkBox">
+                                        <property name="halign">fill</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="orientation">horizontal</property>
+                                        <property name="spacing">6</property>
+                                        <child>
+                                            <object class="GtkButton">
+                                                <signal name="clicked" handler="handle_cancel"
+                                                    swapped="true" />
+                                                <property name="label">Cancel</property>
+                                                <property name="halign">fill</property>
+                                                <property name="hexpand">true</property>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="GtkButton" id="choose_button">
+                                                <signal name="clicked" handler="handle_choose"
+                                                    swapped="true" />
+                                                <property name="label">Choose</property>
+                                                <property name="halign">fill</property>
+                                                <property name="hexpand">true</property>
+                                                <property name="sensitive">false</property>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </child>
                             </object>
-                        </child>
+                        </property>
+                        <property name="resize-start-child">true</property>
+                        <property name="resize-end-child">true</property>
+                        <property name="shrink-start-child">false</property>
+                        <property name="shrink-end-child">false</property>
                     </object>
                 </child>
             </object>

@@ -186,6 +186,10 @@ impl DdGoogleFolderTree {
         }));
 
         let list_view = ListView::new(Some(selection_model), Some(factory));
+        list_view.set_hexpand(true);
+        list_view.set_vexpand(true);
+        list_view.set_valign(gtk::Align::Fill);
+        list_view.set_halign(gtk::Align::Fill);
         list_view.set_single_click_activate(false);
 
         obj.imp().window.set_child(Some(&list_view));

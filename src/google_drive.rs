@@ -139,7 +139,6 @@ pub async fn initialize_client(
         .await
     {
         Ok(result) => {
-            println!("refresh expires in {}", result.refresh_token_expires_in);
             sender
                 .send_blocking(InitializeMessage::Token { token: result })
                 .expect("Drive Frontend channel closed");

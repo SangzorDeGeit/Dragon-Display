@@ -187,7 +187,7 @@ pub fn googledrive_connect(
     campaign: Campaign,
     calling_function: CallingFunction,
 ) {
-    let (sender, receiver) = async_channel::bounded(1);
+    let (sender, receiver) = async_channel::unbounded();
     let reconnect = match calling_function {
         CallingFunction::SelectPath => true,
         CallingFunction::Synchronize => true,

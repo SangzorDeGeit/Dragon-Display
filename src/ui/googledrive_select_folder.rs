@@ -190,6 +190,10 @@ impl DdGoogleFolderSelectWindow {
                     refresh_button.set_sensitive(true);
                     campaign.replace(new_campaign);
                     let folder_tree = DdGoogleFolderTree::new(result);
+                    folder_tree.set_hexpand(true);
+                    folder_tree.set_vexpand(true);
+                    folder_tree.set_halign(gtk::Align::Fill);
+                    folder_tree.set_valign(gtk::Align::Fill);
                     load_select_widget.remove(
                         &load_select_widget
                             .first_child()
