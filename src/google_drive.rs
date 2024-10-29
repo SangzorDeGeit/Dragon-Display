@@ -38,24 +38,8 @@ pub async fn initialize_client(
     sender: async_channel::Sender<InitializeMessage>,
     server_terminator: async_channel::Receiver<()>,
 ) {
-    match configure_environment() {
-        Ok(_) => (),
-        Err(e) => {
-            sender
-                .send_blocking(InitializeMessage::Error { error: e })
-                .expect("Drive Frontend channel closed");
-            return;
-        }
-    }
-    //initialize client
-    let mut google_drive_client = Client::new_from_env("", "").await;
-
-    //make a consent url
-    let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
-
-    let (tx, rx) = mpsc::channel();
-
     //start the target server for the redirect
+    let (tx, rx) = mpsc::channel();
     let (_handler, server_sender) = match start_server(tx) {
         Ok((h, s)) => (h, s),
         Err(e) => {
@@ -87,7 +71,7 @@ pub async fn initialize_client(
         }
     }));
 
-    match open::that(user_consent_url.clone()) {
+    match configure_environment() {
         Ok(_) => (),
         Err(e) => {
             sender
@@ -96,6 +80,23 @@ pub async fn initialize_client(
             return;
         }
     }
+
+    //initialize client
+    let mut google_drive_client = Client::new_from_env("", "").await;
+
+    //make a consent url
+    let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
+
+    match open::that(&user_consent_url) {
+        Ok(_) => (),
+        Err(e) => {
+            sender
+                .send_blocking(InitializeMessage::Error { error: e })
+                .expect("Drive Frontend channel closed");
+            return;
+        }
+    }
+
     sender
         .send_blocking(InitializeMessage::UserConsentUrl {
             url: user_consent_url,

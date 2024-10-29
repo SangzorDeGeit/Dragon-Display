@@ -68,7 +68,7 @@ mod imp {
     impl DdThumbnailGrid {
         #[template_callback]
         fn handle_previous(&self, button: Button) {
-            let page_vec = self.page_vec.borrow().clone();
+            let page_vec = self.page_vec.borrow();
             let current_nr = self.current_grid_nr.get();
             let previous_nr = current_nr
                 .checked_sub(1)
@@ -88,7 +88,7 @@ mod imp {
 
         #[template_callback]
         fn handle_next(&self, button: Button) {
-            let page_vec = self.page_vec.borrow().clone();
+            let page_vec = self.page_vec.borrow();
             let current_nr = self.current_grid_nr.get();
             let mut next_nr = current_nr.wrapping_add(1);
             let current_page = page_vec.get(current_nr).expect("No current page was found");
@@ -184,8 +184,14 @@ impl DdThumbnailGrid {
                 .build();
             page_vec.push(page);
         }
-        // If there are no pages (in other words there are no files to display) return
+        // If there are no pages (in other words there are no files to display) remove prev and
+        // next and return
         if let None = page_vec.get(0) {
+            imp.main_box.remove(
+                &imp.main_box
+                    .first_child()
+                    .expect("Did not find navigation buttons"),
+            );
             return;
         }
         let mut filling_page = 0;
@@ -237,10 +243,10 @@ impl DdThumbnailGrid {
         imp.current_grid_nr.replace(0);
         imp.main_box
             .prepend(page_vec.get(0).expect("Could not find page"));
-        imp.page_vec.replace(page_vec);
-        if filling_page == 0 {
+        if page_vec.len() <= 1 {
             imp.main_box.remove(&imp.navigation_box.clone());
         }
+        imp.page_vec.replace(page_vec);
     }
 
     /// returns the selected image path

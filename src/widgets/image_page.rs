@@ -75,7 +75,7 @@ mod imp {
                         .send_blocking(ControlWindowMessage::Error {
                             error: Error::new(
                                 ErrorKind::NotFound,
-                                "Current selected image does not exist anymore",
+                                "Current selected image does not exist anymore or the file extension and metadata do not match",
                             ),
                             fatal: false,
                         })
@@ -115,7 +115,7 @@ mod imp {
                         .send_blocking(ControlWindowMessage::Error {
                             error: Error::new(
                                 ErrorKind::NotFound,
-                                "Current selected image does not exist anymore",
+                                "Current selected image does not exist anymore or the file extension and metadata do not match",
                             ),
                             fatal: false,
                         })
@@ -123,7 +123,7 @@ mod imp {
                     return;
                 }
             };
-            let img = img.rotate180();
+            let img = img.fliph();
             match img.save(&path) {
                 Ok(_) => sender
                     .send_blocking(ControlWindowMessage::Image { picture_path: path })

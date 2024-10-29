@@ -58,16 +58,15 @@ pub fn dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monit
             }
         }
     }));
-    control_window.connect_destroy(clone!(@strong app => move |_| {
+    control_window.connect_destroy(clone!(@strong app, @strong control_window => move |_| {
         display_window.destroy();
-        app.quit();
     }));
 }
 
 pub fn refresh(app: &adw::Application, campaign: Campaign, sender: Sender<()>) {
-    let (sync_sender, sync_receiver) = async_channel::bounded(1);
+    let (sync_sender, sync_receiver) = async_channel::unbounded();
     // call make a google_synchronize window
-    let window = GoogledriveSynchronizeWindow::new(app, campaign.clone(), sync_sender);
+    let window = GoogledriveSynchronizeWindow::new(&app, campaign.clone(), sync_sender);
     window.present();
     spawn_future_local(clone!(@strong sender, @strong app => async move {
         while let Ok(message) = sync_receiver.recv().await {
@@ -84,7 +83,7 @@ pub fn refresh(app: &adw::Application, campaign: Campaign, sender: Sender<()>) {
                             .present();
                     }
                     match write_campaign_to_config(campaign.clone()) {
-                        Ok(_) => sender.send_blocking(()).expect("Channel closed"),
+                        Ok(_) => sender.send(()).await.expect("Channel closed"),
                         Err(error) => ErrorDialog::new(&app, error, true).present(),
                     }
                 }

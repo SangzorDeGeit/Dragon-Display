@@ -26,6 +26,7 @@ mod imp {
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Stack, StackSwitcher};
 
     use crate::config::Campaign;
+    use crate::config::SynchronizationOption;
     use crate::program_manager::ControlWindowMessage;
 
     // Object holding the state
@@ -70,6 +71,13 @@ mod imp {
     impl ControlWindow {
         #[template_callback]
         fn handle_refresh(&self, _: Button) {
+            if matches!(
+                self.campaign.borrow().sync_option,
+                SynchronizationOption::None
+            ) {
+                self.obj().refresh_widgets();
+                return;
+            }
             // make async channel
             let (refresh_sender, refresh_receiver) = async_channel::bounded(1);
             // send refresh signal
@@ -85,7 +93,7 @@ mod imp {
             let obj = self.obj().clone();
             spawn_future_local(async move {
                 while let Ok(_) = refresh_receiver.recv().await {
-                    obj.clone().refresh_widgets();
+                    obj.refresh_widgets();
                 }
             });
         }
@@ -104,7 +112,7 @@ mod imp {
             let obj = self.obj().clone();
             spawn_future_local(async move {
                 while let Ok(_) = refresh_receiver.recv().await {
-                    obj.clone().refresh_widgets();
+                    obj.refresh_widgets();
                 }
             });
         }
@@ -164,7 +172,7 @@ impl ControlWindow {
         object
     }
 
-    pub fn refresh_widgets(self) {
+    pub fn refresh_widgets(&self) {
         let imp = self.imp();
         let sender = imp.sender.borrow().clone().expect("No sender found");
         let image_page = DdImagePage::new(imp.campaign.borrow().clone(), sender);

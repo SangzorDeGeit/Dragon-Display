@@ -104,13 +104,15 @@ impl GoogledriveSynchronizeWindow {
                 match synchronize_files(campaign, progress_sender).await {
                     Ok((c, f)) => (c, f),
                     Err(e) => {
-                        sender.send_blocking(Err(e)).expect("Channel closed");
+                        sender.send(Err(e)).await.expect("Channel closed");
                         return;
                     }
                 };
             sender
-                .send_blocking(Ok((new_campaign, failed_files)))
+                .send(Ok((new_campaign, failed_files)))
+                .await
                 .expect("Channel closed");
+            sender.close();
         });
     }
 }
