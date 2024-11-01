@@ -1,9 +1,7 @@
-use std::fs::{read_dir, DirEntry};
-use std::io::Error;
+use std::path::PathBuf;
 
-use crate::config::{Campaign, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::config::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 use crate::program_manager::ControlWindowMessage;
-use crate::ui::control_window::Page;
 use crate::widgets::thumbnail_image::DdThumbnailImage;
 use crate::APP_ID;
 use async_channel::Sender;
@@ -22,7 +20,6 @@ mod imp {
     use gtk::{glib, template_callbacks, Box, CompositeTemplate, Grid};
     use gtk::{prelude::*, Button};
 
-    use crate::config::Campaign;
     use crate::program_manager::ControlWindowMessage;
 
     // Object holding the state
@@ -37,7 +34,6 @@ mod imp {
         pub next: TemplateChild<Button>,
         #[template_child]
         pub previous: TemplateChild<Button>,
-        pub campaign: RefCell<Campaign>,
         pub current_grid_nr: Cell<usize>,
         pub page_vec: RefCell<Vec<Grid>>,
         pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
@@ -130,18 +126,17 @@ glib::wrapper! {
 }
 
 impl DdThumbnailGrid {
-    pub fn new(campaign: Campaign, sender: Sender<ControlWindowMessage>, page: Page) -> Self {
+    pub fn new(sender: Sender<ControlWindowMessage>, files: Vec<PathBuf>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        imp.campaign.replace(campaign);
         imp.sender.replace(Some(sender));
-        Self::initialize(imp, page);
+        Self::initialize(imp, files);
 
         object
     }
 
-    fn initialize(imp: &imp::DdThumbnailGrid, page: Page) {
+    fn initialize(imp: &imp::DdThumbnailGrid, files: Vec<PathBuf>) {
         let sender = imp.sender.borrow().clone().expect("Sender not found");
         let settings = gtk::gio::Settings::new(APP_ID);
         let mut column = settings.int("imagegrid-column-amount");
@@ -152,27 +147,13 @@ impl DdThumbnailGrid {
         if row <= 0 {
             row = 3;
         }
-        let campaign_path = imp.campaign.borrow().clone().path;
-        let files = match read_dir(campaign_path) {
-            Ok(f) => f,
-            Err(e) => {
-                sender
-                    .send_blocking(ControlWindowMessage::Error {
-                        error: e,
-                        fatal: true,
-                    })
-                    .expect("Channel closed");
-                return;
-            }
-        };
-        let files: Vec<Result<DirEntry, Error>> = files.collect();
         let file_amount = files.len() as f64;
         let files_per_page = (row * column) as f64;
         // the amount of pages needed is the amount of files divided by the amount of files per
         // page rounded up
         let pages_needed = (file_amount / files_per_page).ceil() as i32;
         let mut page_vec = Vec::new();
-        let mut prev_button: Option<ToggleButton> = None;
+        let mut prev_button: Option<&ToggleButton> = None;
         for _ in 0..pages_needed {
             let page = Grid::builder()
                 .halign(gtk::Align::Fill)
@@ -196,39 +177,37 @@ impl DdThumbnailGrid {
         }
         let mut filling_page = 0;
         let mut i = 0;
+        let mut thumbnail_image: DdThumbnailImage;
+        let mut thumbnail_video: DdThumbnailVideo;
         for file in files {
-            let file = match file {
-                Ok(f) => f,
-                Err(_) => continue,
-            };
-            let file_path = file.path();
-            let extension = match file_path.extension() {
-                Some(e) => e,
-                None => continue,
-            };
-            let extension = extension.to_str().expect("Could not convert to str");
-            if IMAGE_EXTENSIONS.contains(&extension) && matches!(page, Page::IMAGE) {
-                let thumbnail = DdThumbnailImage::new(&file, sender.clone(), prev_button);
+            // the validity of th extension was already checked in control_window
+            let extension = file
+                .extension()
+                .expect("Could not get file extension")
+                .to_str()
+                .expect("Could not convert to str");
+            if IMAGE_EXTENSIONS.contains(&extension) {
+                thumbnail_image = DdThumbnailImage::new(&file, sender.clone(), prev_button);
                 let filling_grid = page_vec
                     .get(filling_page)
                     .expect("Not enough pages created");
-                thumbnail.set_halign(gtk::Align::Fill);
-                thumbnail.set_valign(gtk::Align::Fill);
-                thumbnail.set_hexpand(true);
-                thumbnail.set_vexpand(true);
-                prev_button = Some(thumbnail.get_togglebutton());
-                filling_grid.attach(&thumbnail, i % column, i / column, 1, 1);
-            } else if VIDEO_EXTENSIONS.contains(&extension) && matches!(page, Page::VIDEO) {
-                let thumbnail = DdThumbnailVideo::new(&file, sender.clone(), prev_button);
+                thumbnail_image.set_halign(gtk::Align::Fill);
+                thumbnail_image.set_valign(gtk::Align::Fill);
+                thumbnail_image.set_hexpand(true);
+                thumbnail_image.set_vexpand(true);
+                prev_button = Some(thumbnail_image.get_togglebutton());
+                filling_grid.attach(&thumbnail_image, i % column, i / column, 1, 1);
+            } else if VIDEO_EXTENSIONS.contains(&extension) {
+                thumbnail_video = DdThumbnailVideo::new(&file, sender.clone(), prev_button);
                 let filling_grid = page_vec
                     .get(filling_page)
                     .expect("Not enough pages created");
-                thumbnail.set_halign(gtk::Align::Fill);
-                thumbnail.set_valign(gtk::Align::Fill);
-                thumbnail.set_hexpand(true);
-                thumbnail.set_vexpand(true);
-                prev_button = Some(thumbnail.get_togglebutton());
-                filling_grid.attach(&thumbnail, i % column, i / column, 1, 1);
+                thumbnail_video.set_halign(gtk::Align::Fill);
+                thumbnail_video.set_valign(gtk::Align::Fill);
+                thumbnail_video.set_hexpand(true);
+                thumbnail_video.set_vexpand(true);
+                prev_button = Some(thumbnail_video.get_togglebutton());
+                filling_grid.attach(&thumbnail_video, i % column, i / column, 1, 1);
             } else {
                 continue;
             }
@@ -244,30 +223,12 @@ impl DdThumbnailGrid {
         imp.main_box
             .prepend(page_vec.get(0).expect("Could not find page"));
         if page_vec.len() <= 1 {
-            imp.main_box.remove(&imp.navigation_box.clone());
+            imp.main_box.remove(
+                &imp.main_box
+                    .last_child()
+                    .expect("Did not find navigation box"),
+            );
         }
         imp.page_vec.replace(page_vec);
-    }
-
-    /// returns the selected image path
-    pub fn get_selected_image(&self) -> Option<String> {
-        for grid in self.imp().page_vec.borrow().clone() {
-            let mut child = grid
-                .first_child()?
-                .downcast::<DdThumbnailImage>()
-                .expect("Could not cast to thumbnail");
-            if child.selected() {
-                return Some(child.get_path());
-            }
-            while let Some(c) = child.next_sibling() {
-                child = c
-                    .downcast::<DdThumbnailImage>()
-                    .expect("Could not cast to thumbnail");
-                if child.selected() {
-                    return Some(child.get_path());
-                }
-            }
-        }
-        return None;
     }
 }

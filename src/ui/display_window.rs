@@ -2,9 +2,9 @@ use adw::Application;
 use async_channel::Receiver;
 use glib::spawn_future_local;
 use gtk::gio::File;
-use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib, Picture, Video};
+use gtk::{prelude::*, Widget};
 
 use crate::program_manager::DisplayWindowMessage;
 
@@ -88,40 +88,62 @@ impl DdDisplayWindow {
         let current_content = imp.current_content.clone();
         spawn_future_local(async move {
             while let Ok(message) = receiver.recv().await {
-                if let Some(child) = content.first_child() {
-                    content.remove(&child);
-                }
+                let child = match content.first_child() {
+                    Some(child) => {
+                        content.remove(&child);
+                        child
+                    }
+                    None => Widget::from(Picture::new()),
+                };
                 match message {
                     DisplayWindowMessage::Image { picture_path } => {
                         current_content.replace(picture_path.clone());
-                        let file = File::for_path(picture_path);
-                        let image = Picture::builder().file(&file).build();
+                        let image = match child.downcast_ref::<Picture>() {
+                            Some(image) => {
+                                image.set_filename(Some(&picture_path));
+                                image
+                            }
+                            None => {
+                                let file = File::for_path(picture_path);
+                                &Picture::builder().file(&file).build()
+                            }
+                        };
                         if fit.get() {
                             image.set_content_fit(gtk::ContentFit::Fill);
                         }
-                        content.append(&image);
+                        content.append(image);
                     }
                     DisplayWindowMessage::Fit { fit: f } => {
                         fit.set(f);
-                        let file = File::for_path(current_content.borrow().clone());
-                        let image = Picture::builder().file(&file).build();
+                        let child = match child.downcast_ref::<Picture>() {
+                            Some(child) => child,
+                            None => continue,
+                        };
                         if f {
-                            image.set_content_fit(gtk::ContentFit::Fill);
+                            child.set_content_fit(gtk::ContentFit::Fill);
                         } else {
-                            image.set_content_fit(gtk::ContentFit::Contain);
+                            child.set_content_fit(gtk::ContentFit::Contain);
                         }
-                        content.append(&image);
+                        content.append(child);
                     }
                     DisplayWindowMessage::Video { video_path } => {
                         current_content.replace(video_path.clone());
-                        let file = File::for_path(video_path);
-                        let video = Video::builder()
-                            .loop_(true)
-                            .autoplay(true)
-                            .file(&file)
-                            .sensitive(false)
-                            .build();
-                        content.append(&video);
+                        let video = match child.downcast_ref::<Video>() {
+                            Some(video) => {
+                                video.set_filename(Some(&video_path));
+                                video
+                            }
+                            None => {
+                                let file = File::for_path(video_path);
+                                &Video::builder()
+                                    .loop_(true)
+                                    .autoplay(true)
+                                    .file(&file)
+                                    .sensitive(false)
+                                    .build()
+                            }
+                        };
+                        content.append(video);
                     }
                 }
             }

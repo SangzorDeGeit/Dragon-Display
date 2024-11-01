@@ -1,11 +1,11 @@
+use std::path::PathBuf;
+
 use async_channel::Sender;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
-use crate::config::Campaign;
 use crate::program_manager::ControlWindowMessage;
-use crate::ui::control_window::Page;
 
 use super::thumbnail_grid::DdThumbnailGrid;
 
@@ -75,11 +75,11 @@ glib::wrapper! {
 }
 
 impl DdVideoPage {
-    pub fn new(campaign: Campaign, sender: Sender<ControlWindowMessage>) -> Self {
+    pub fn new(sender: Sender<ControlWindowMessage>, files: Vec<PathBuf>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        let thumbnail_widget = DdThumbnailGrid::new(campaign, sender, Page::VIDEO);
+        let thumbnail_widget = DdThumbnailGrid::new(sender, files);
         thumbnail_widget.set_halign(gtk::Align::Fill);
         thumbnail_widget.set_valign(gtk::Align::Fill);
         thumbnail_widget.set_hexpand(true);

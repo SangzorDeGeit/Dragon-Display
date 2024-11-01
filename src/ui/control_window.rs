@@ -1,18 +1,16 @@
+use std::fs::read_dir;
+use std::path::PathBuf;
+
 use adw::Application;
 use async_channel::Sender;
-use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use gtk::{prelude::*, Label};
 
-use crate::config::Campaign;
+use crate::config::{Campaign, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 use crate::program_manager::ControlWindowMessage;
 use crate::widgets::image_page::DdImagePage;
 use crate::widgets::video_page::DdVideoPage;
-
-pub enum Page {
-    IMAGE,
-    VIDEO,
-}
 
 mod imp {
 
@@ -75,7 +73,7 @@ mod imp {
                 self.campaign.borrow().sync_option,
                 SynchronizationOption::None
             ) {
-                self.obj().refresh_widgets();
+                self.obj().update_widgets();
                 return;
             }
             // make async channel
@@ -93,7 +91,7 @@ mod imp {
             let obj = self.obj().clone();
             spawn_future_local(async move {
                 while let Ok(_) = refresh_receiver.recv().await {
-                    obj.refresh_widgets();
+                    obj.update_widgets();
                 }
             });
         }
@@ -112,7 +110,7 @@ mod imp {
             let obj = self.obj().clone();
             spawn_future_local(async move {
                 while let Ok(_) = refresh_receiver.recv().await {
-                    obj.refresh_widgets();
+                    obj.update_widgets();
                 }
             });
         }
@@ -156,35 +154,81 @@ impl ControlWindow {
         imp.campaign.replace(campaign.clone());
         imp.sender.replace(Some(sender.clone()));
         imp.stackswitcher.set_stack(Some(&imp.stack));
-        let image_page = DdImagePage::new(campaign.clone(), sender.clone());
-        image_page.set_halign(gtk::Align::Fill);
-        image_page.set_valign(gtk::Align::Fill);
-        image_page.set_hexpand(true);
-        image_page.set_vexpand(true);
-        imp.images.append(&image_page);
-        let video_page = DdVideoPage::new(campaign, sender);
-        video_page.set_halign(gtk::Align::Fill);
-        video_page.set_valign(gtk::Align::Fill);
-        video_page.set_hexpand(true);
-        video_page.set_vexpand(true);
-        imp.videos.append(&video_page);
+        object.update_widgets();
 
         object
     }
 
-    pub fn refresh_widgets(&self) {
+    pub fn update_widgets(&self) {
         let imp = self.imp();
         let sender = imp.sender.borrow().clone().expect("No sender found");
-        let image_page = DdImagePage::new(imp.campaign.borrow().clone(), sender);
-        image_page.set_halign(gtk::Align::Fill);
-        image_page.set_valign(gtk::Align::Fill);
-        image_page.set_hexpand(true);
-        image_page.set_vexpand(true);
-        imp.images
-            .remove(&imp.images.first_child().expect("No image page found"));
-        imp.images.append(&image_page);
+        let files = match read_dir(&imp.campaign.borrow().path) {
+            Ok(f) => f,
+            Err(e) => {
+                sender
+                    .send_blocking(ControlWindowMessage::Error {
+                        error: e,
+                        fatal: true,
+                    })
+                    .expect("Channel closed");
+                return;
+            }
+        };
+        if let Some(current_page) = imp.images.first_child() {
+            imp.images.remove(&current_page);
+        }
+        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+            .filter_map(|f| f.ok())
+            .map(|f| f.path())
+            .filter(|f| f.to_str().is_some() && f.extension().is_some())
+            .filter(|f| f.extension().unwrap().to_str().is_some())
+            .partition(|f| IMAGE_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
+        if image_files.len() == 0 {
+            let label = Label::builder()
+                .label("You do not have any images")
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .vexpand(true)
+                .build();
+            imp.images.append(&label);
+        } else {
+            let image_page = DdImagePage::new(sender.clone(), image_files);
+            image_page.set_halign(gtk::Align::Fill);
+            image_page.set_valign(gtk::Align::Fill);
+            image_page.set_hexpand(true);
+            image_page.set_vexpand(true);
+            imp.images.append(&image_page);
+        }
 
         // create new video page append it to the video box
+        if let Some(current_page) = imp.videos.first_child() {
+            imp.videos.remove(&current_page);
+        }
+        let (video_files, _non_video_files): (Vec<PathBuf>, Vec<PathBuf>) = non_image_files
+            .into_iter()
+            .partition(|f| VIDEO_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
+        if video_files.len() == 0 {
+            let label = Label::builder()
+                .label("You do not have any videos. Please be aware that adding videos could decrease performance of the program. Videos are not recommended when running on weak systems")
+                .justify(gtk::Justification::Center)
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .vexpand(true)
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::Word)
+                .max_width_chars(40)
+                .build();
+            imp.videos.append(&label);
+        } else {
+            let video_page = DdVideoPage::new(sender, video_files);
+            video_page.set_halign(gtk::Align::Fill);
+            video_page.set_valign(gtk::Align::Fill);
+            video_page.set_hexpand(true);
+            video_page.set_vexpand(true);
+            imp.videos.append(&video_page);
+        }
 
         // create new vtt page append it to the vtt box
     }

@@ -2,4 +2,5 @@
 /campaigns
 .config.toml
 client_secret.json
-
+/memory_test
+ 

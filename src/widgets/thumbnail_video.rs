@@ -6,7 +6,8 @@ use gtk::{
     subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
 };
 use gtk::{prelude::*, ToggleButton};
-use std::{fs::DirEntry, io::Error};
+use std::io::Error;
+use std::path::PathBuf;
 
 use gtk::subclass::prelude::*;
 
@@ -76,25 +77,30 @@ glib::wrapper! {
 
 impl DdThumbnailVideo {
     pub fn new(
-        file: &DirEntry,
+        path: &PathBuf,
         sender: Sender<ControlWindowMessage>,
-        prev_button: Option<ToggleButton>,
+        prev_button: Option<&ToggleButton>,
     ) -> Self {
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        let file_name = file.file_name();
-        let name = file_name.to_str().expect("File has no filename");
-        let file_path = file.path();
-        let path = file_path.to_str().expect("No file path found").to_owned();
-        imp.label.set_text(name);
-        imp.button.set_group(prev_button.as_ref());
+        let file_name = path
+            .file_name()
+            .expect("Could not get filename")
+            .to_str()
+            .expect("Could not obtain filename");
+        let file_path = path
+            .to_str()
+            .expect("Path of file could not be obtained")
+            .to_string();
+        imp.label.set_text(file_name);
+        imp.button.set_group(prev_button);
 
-        match create_thumbnail(&path) {
+        match create_thumbnail(&file_path) {
             Ok(p) => imp.icon.set_pixbuf(Some(&p)),
             Err(e) => {
                 let errormsg = format!(
                     "Failed to create thumbnail for {}: {}",
-                    &path,
+                    &file_path,
                     e.to_string()
                 );
                 sender
@@ -109,7 +115,7 @@ impl DdThumbnailVideo {
         imp.button.connect_clicked(clone!(@strong path => move |_| {
             sender
                 .send_blocking(ControlWindowMessage::Video {
-                    video_path: path.to_string(),
+                    video_path: file_path.to_string(),
                 })
                 .expect("Channel closed");
         }));
@@ -117,9 +123,9 @@ impl DdThumbnailVideo {
         object
     }
 
-    pub fn get_togglebutton(&self) -> ToggleButton {
+    pub fn get_togglebutton(&self) -> &ToggleButton {
         let imp = self.imp();
-        imp.button.clone()
+        &imp.button
     }
 }
 

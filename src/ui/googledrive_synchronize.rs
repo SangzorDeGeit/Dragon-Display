@@ -12,15 +12,9 @@ use crate::widgets::progress_bar::DdProgressBar;
 
 mod imp {
 
-    use std::cell::RefCell;
-    use std::io::Error;
-
-    use async_channel::Sender;
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, CompositeTemplate};
-
-    use crate::config::Campaign;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -28,8 +22,6 @@ mod imp {
     pub struct GoogledriveSynchronizeWindow {
         #[template_child]
         pub main_box: TemplateChild<Box>,
-        pub campaign: RefCell<Campaign>,
-        pub sender: RefCell<Option<Sender<Result<(Campaign, Vec<String>), Error>>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -84,20 +76,9 @@ impl GoogledriveSynchronizeWindow {
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
         let imp = object.imp();
-        imp.campaign.replace(campaign);
-        imp.sender.replace(Some(sender));
-        Self::initialize(imp);
-
-        object
-    }
-
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::GoogledriveSynchronizeWindow) {
-        let campaign = imp.campaign.borrow().clone();
         let (progress_sender, progress_receiver) = async_channel::unbounded();
         let progress_bar = DdProgressBar::new(progress_receiver);
         imp.main_box.append(&progress_bar);
-        let sender = imp.sender.borrow().clone().expect("No sender found");
 
         runtime().spawn(async move {
             let (new_campaign, failed_files) =
@@ -112,7 +93,8 @@ impl GoogledriveSynchronizeWindow {
                 .send(Ok((new_campaign, failed_files)))
                 .await
                 .expect("Channel closed");
-            sender.close();
         });
+
+        object
     }
 }

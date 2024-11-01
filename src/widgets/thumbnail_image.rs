@@ -1,20 +1,17 @@
 use async_channel::Sender;
 use gtk::{
     gio::File,
-    glib::{self, clone},
+    glib::{self},
     subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
 };
 use gtk::{prelude::*, ToggleButton};
-use std::fs::DirEntry;
+use std::path::PathBuf;
 
 use gtk::subclass::prelude::*;
 
 use crate::program_manager::ControlWindowMessage;
 
 mod imp {
-
-    use std::cell::{Cell, RefCell};
-    use std::rc::Rc;
 
     use glib::subclass::InitializingObject;
     use gtk::{CompositeTemplate, Label, Picture, ToggleButton};
@@ -30,8 +27,6 @@ mod imp {
         pub icon: TemplateChild<Picture>,
         #[template_child]
         pub label: TemplateChild<Label>,
-        pub selected: Rc<Cell<bool>>,
-        pub path: RefCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -76,52 +71,41 @@ glib::wrapper! {
 
 impl DdThumbnailImage {
     pub fn new(
-        file: &DirEntry,
+        path: &PathBuf,
         sender: Sender<ControlWindowMessage>,
-        prev_button: Option<ToggleButton>,
+        prev_button: Option<&ToggleButton>,
     ) -> Self {
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        let file_name = file.file_name();
-        let name = file_name.to_str().expect("File has no filename");
-        let file_path = file.path();
-        let path = file_path.to_str().expect("No file path found").to_owned();
-        let file = File::for_path(path.as_str());
+        let file_name = path
+            .file_name()
+            .expect("Could not get filename of file")
+            .to_str()
+            .expect("Could not obtain filename");
+        // the path.to_string was already checked
+        let file_path = path
+            .to_str()
+            .expect("Path of file could not be obtained")
+            .to_string();
+        let file = File::for_path(&file_path);
         imp.icon.set_file(Some(&file));
-        imp.label.set_text(name);
-        imp.button.set_group(prev_button.as_ref());
-        imp.path.replace(path.clone());
+        imp.icon.set_content_fit(gtk::ContentFit::Fill);
+        imp.label.set_text(file_name);
+        imp.button.set_group(prev_button);
 
-        let selected = imp.selected.clone();
-        imp.button
-            .connect_toggled(clone!(@strong path => move |button| {
-                if button.is_active() {
-                    selected.set(true);
-                sender
-                    .send_blocking(ControlWindowMessage::Image {
-                        picture_path: path.to_string(),
-                    })
-                    .expect("Channel closed");
-                } else {
-                    selected.set(false);
-                }
-            }));
+        imp.button.connect_clicked(move |_| {
+            sender
+                .send_blocking(ControlWindowMessage::Image {
+                    picture_path: file_path.clone(),
+                })
+                .expect("Channel closed");
+        });
 
         object
     }
 
-    pub fn get_togglebutton(&self) -> ToggleButton {
+    pub fn get_togglebutton(&self) -> &ToggleButton {
         let imp = self.imp();
-        imp.button.clone()
-    }
-
-    pub fn get_path(&self) -> String {
-        let imp = self.imp();
-        imp.path.borrow().clone()
-    }
-
-    pub fn selected(&self) -> bool {
-        let imp = self.imp();
-        imp.selected.get()
+        &imp.button
     }
 }
