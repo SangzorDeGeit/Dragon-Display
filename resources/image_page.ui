@@ -20,14 +20,23 @@
                         <!-- Functional buttons -->
                         <child>
                             <object class="GtkButton">
-                                <signal name="clicked" handler="handle_rotate_90" swapped="true" />
+                                <signal name="clicked" handler="handle_rotate_90"
+                                    swapped="true" />
                                 <property name="label">Rotate 90&#176;</property>
                             </object>
                         </child>
                         <child>
                             <object class="GtkButton">
-                                <signal name="clicked" handler="handle_rotate_180" swapped="true" />
+                                <signal name="clicked" handler="handle_rotate_180"
+                                    swapped="true" />
                                 <property name="label">Rotate 180&#176;</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_rotate_270"
+                                    swapped="true" />
+                                <property name="label">Rotate 270&#176;</property>
                             </object>
                         </child>
                         <child>

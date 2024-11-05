@@ -1,6 +1,8 @@
 use adw::Application;
 use async_channel::Receiver;
+use gdk4::Texture;
 use glib::spawn_future_local;
+use gtk::gdk_pixbuf::Pixbuf;
 use gtk::gio::File;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib, Picture, Video};
@@ -87,6 +89,9 @@ impl DdDisplayWindow {
         let fit = imp.fit.clone();
         let current_content = imp.current_content.clone();
         spawn_future_local(async move {
+            // create a pixbuf from file
+            // create a texture from the pixbuf (this is a paintable)
+            // create the picture from the paintable
             while let Ok(message) = receiver.recv().await {
                 let child = match content.first_child() {
                     Some(child) => {
@@ -119,11 +124,26 @@ impl DdDisplayWindow {
                             Some(child) => child,
                             None => continue,
                         };
+
                         if f {
                             child.set_content_fit(gtk::ContentFit::Fill);
                         } else {
                             child.set_content_fit(gtk::ContentFit::Contain);
                         }
+                        content.append(child);
+                    }
+                    DisplayWindowMessage::Rotate { rotation } => {
+                        let child = match child.downcast_ref::<Picture>() {
+                            Some(child) => child,
+                            None => continue,
+                        };
+                        let pixbuf = match Pixbuf::from_file(current_content.borrow().clone()) {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        };
+                        let pixbuf = pixbuf.rotate_simple(rotation).expect("Could not rotate");
+                        let texture = Texture::for_pixbuf(&pixbuf);
+                        child.set_paintable(Some(&texture));
                         content.append(child);
                     }
                     DisplayWindowMessage::Video { video_path } => {

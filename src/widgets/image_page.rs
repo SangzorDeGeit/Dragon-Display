@@ -11,14 +11,13 @@ use super::thumbnail_grid::DdThumbnailGrid;
 
 mod imp {
     use async_channel::Sender;
+    use gtk::gdk_pixbuf::PixbufRotation;
     use std::cell::{Cell, RefCell};
 
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, Button, CompositeTemplate, ToggleButton};
     use gtk::{prelude::*, template_callbacks};
-
-    use image::metadata::Orientation;
 
     use crate::program_manager::ControlWindowMessage;
 
@@ -63,7 +62,7 @@ mod imp {
                 .clone()
                 .expect("No sender found")
                 .send_blocking(ControlWindowMessage::Rotate {
-                    orientation: Orientation::Rotate90,
+                    rotation: PixbufRotation::Clockwise,
                 })
                 .expect("Channel closed");
         }
@@ -75,7 +74,19 @@ mod imp {
                 .clone()
                 .expect("No sender found")
                 .send_blocking(ControlWindowMessage::Rotate {
-                    orientation: Orientation::Rotate180,
+                    rotation: PixbufRotation::Upsidedown,
+                })
+                .expect("Channel closed");
+        }
+
+        #[template_callback]
+        fn handle_rotate_270(&self, _: Button) {
+            self.sender
+                .borrow()
+                .clone()
+                .expect("No sender found")
+                .send_blocking(ControlWindowMessage::Rotate {
+                    rotation: PixbufRotation::Counterclockwise,
                 })
                 .expect("Channel closed");
         }

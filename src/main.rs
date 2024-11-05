@@ -6,6 +6,7 @@ use gtk::{gio, glib};
 
 //imported modules
 pub mod config;
+pub mod errors;
 pub mod google_drive;
 pub mod program_manager;
 pub mod setup_manager;
