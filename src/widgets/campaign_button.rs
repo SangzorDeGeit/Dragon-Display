@@ -66,7 +66,8 @@ mod imp {
                             error: Error::new(
                                 ErrorKind::Other,
                                 "An error occured while trying to create the folder for images",
-                            ),
+                            )
+                            .into(),
                             fatal: true,
                         })
                         .expect("Channel closed");

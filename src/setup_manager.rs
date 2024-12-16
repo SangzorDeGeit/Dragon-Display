@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    io::{Error, ErrorKind},
-};
+use std::fs;
 
 use super::config::{remove_campaign_from_config, write_campaign_to_config};
 use adw::prelude::*;
@@ -10,9 +7,12 @@ use glib::clone;
 use gtk::glib;
 use gtk::glib::spawn_future_local;
 
-use crate::config::{Campaign, SynchronizationOption};
-use crate::program_manager::dragon_display;
 use crate::{config, program_manager::refresh};
+use crate::{
+    config::{Campaign, SynchronizationOption},
+    errors::GoogleDriveError,
+};
+use crate::{errors::ConfigError, program_manager::dragon_display};
 
 use crate::ui::add_campaign::AddCampaignWindow;
 use crate::ui::error_dialog::ErrorDialog;
@@ -29,14 +29,14 @@ pub enum SelectMessage {
     Campaign { campaign: Campaign },
     Remove,
     Add,
-    Error { error: Error, fatal: bool },
+    Error { error: anyhow::Error, fatal: bool },
 }
 
 /// The messages that the add and remove campaign window can send
 pub enum AddRemoveMessage {
     Campaign { campaign: Campaign },
     Cancel,
-    Error { error: Error, fatal: bool },
+    Error { error: anyhow::Error, fatal: bool },
 }
 
 /// The function that calls the connect/reconnect part of the program
@@ -244,12 +244,16 @@ pub fn googledrive_select_folder(app: &adw::Application, campaign: Campaign) {
                     select_campaign(&app);
                 }
                 AddRemoveMessage::Error { error, fatal } => {
-                    match error.kind() {
-                        ErrorKind::ConnectionRefused => {
-                            window.destroy();
-                            googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath);
-                        },
-                        _ => ErrorDialog::new(&app, error, fatal).present(),
+                    if let Some(gd_error) = error.downcast_ref::<GoogleDriveError>() {
+                        match gd_error {
+                            GoogleDriveError::ConnectionRefused => {
+                                window.destroy();
+                                googledrive_connect(&app, campaign.clone(), CallingFunction::SelectPath);
+                            },
+                            _ => ErrorDialog::new(&app, error, fatal).present(),
+                        }
+                    } else {
+                        ErrorDialog::new(&app, error, fatal).present();
                     }
                 }
             }
@@ -258,17 +262,12 @@ pub fn googledrive_select_folder(app: &adw::Application, campaign: Campaign) {
 }
 
 fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
-    let (sender, receiver) = async_channel::bounded::<Result<(Campaign, Vec<String>), Error>>(1);
+    let (sender, receiver) = async_channel::bounded(1);
     let window = GoogledriveSynchronizeWindow::new(app, campaign.clone(), sender);
     window.present();
 
-    if let Err(e) = fs::create_dir_all(&campaign.path) {
-        ErrorDialog::new(
-            app,
-            Error::new(e.kind(), "Could not create folder for images"),
-            true,
-        )
-        .present();
+    if let Err(_) = fs::create_dir_all(&campaign.path) {
+        ErrorDialog::new(app, ConfigError::FolderCreationError.into(), true).present();
     }
 
     glib::spawn_future_local(clone!(@strong campaign, @weak app => async move {
@@ -277,22 +276,30 @@ fn googledrive_synchronize(app: &adw::Application, campaign: Campaign) {
                 Ok((campaign, failed)) => {
                     window.destroy();
                     if failed.len() > 0 {
-                        let failed_files = failed.join(", ");
-                        let errormsg = format!("The following files could not be downloaded:\n{}", failed_files);
-                        ErrorDialog::new(&app, Error::new(ErrorKind::Unsupported, errormsg), false).present();
+                        ErrorDialog::new(&app, GoogleDriveError::DownloadFailed { files: failed }.into(), false).present();
                     }
                     match write_campaign_to_config(campaign.clone()) {
                         Ok(_) => select_monitor(&app, campaign),
                         Err(error) => ErrorDialog::new(&app, error, true).present(),
                     }
                 },
-                Err(e) => match e.kind() {
-                    ErrorKind::ConnectionRefused => {
-                        window.destroy();
-                        googledrive_connect(&app, campaign.clone(), CallingFunction::Synchronize)
+                Err(e) => {
+                    if let Some(gd_error) = e.downcast_ref::<GoogleDriveError>() {
+                        match gd_error {
+                            GoogleDriveError::ConnectionFailed => {
+                                window.destroy();
+                                googledrive_connect(
+                                    &app,
+                                    campaign.clone(),
+                                    CallingFunction::Synchronize,
+                                )
+                            }
+                            _ => ErrorDialog::new(&app, e.into(), false).present(),
+                        }
+                    } else {
+                        ErrorDialog::new(&app, e.into(), false).present();
                     }
-                    _ => ErrorDialog::new(&app, e, false).present(),
-                },
+                }
             };
         }
     }));
@@ -311,7 +318,7 @@ fn select_monitor(app: &adw::Application, campaign: Campaign) {
                     dragon_display(&app, campaign.clone(), monitor)
                 },
                 Err(error) => {
-                    ErrorDialog::new(&app, error, true).present();
+                    ErrorDialog::new(&app, error.into(), true).present();
                     return;
                 }
             }

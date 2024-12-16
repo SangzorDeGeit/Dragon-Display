@@ -267,7 +267,7 @@ impl DdGoogleFolderSelectWindow {
                     Err(e) => {
                         sender
                             .send_blocking(AddRemoveMessage::Error {
-                                error: e,
+                                error: e.into(),
                                 fatal: false,
                             })
                             .expect("Channel closed");

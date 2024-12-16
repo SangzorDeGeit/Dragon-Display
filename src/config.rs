@@ -1,15 +1,16 @@
 // File containing functions that manage the config folder for campaign data
+use crate::errors::ConfigError;
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::remove_dir_all;
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Error, ErrorKind, Read, Write},
+    io::{self, ErrorKind, Read, Write},
 };
 use toml::to_string;
 
 pub const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
-pub const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "webm", "mkv", "avi", "mov", "flv", "ogg"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH: u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 pub const SYNCHRONIZATION_OPTIONS: [&str; 2] = ["None", "Google Drive"];
@@ -138,25 +139,25 @@ impl Default for SynchronizationOption {
 
 /// Tries to read the campaign configurations from the config file and puts them in a Vector.
 /// if there is no config file this method will return an empty vector
-pub fn read_campaign_from_config() -> Result<Vec<Campaign>, Error> {
+pub fn read_campaign_from_config() -> Result<Vec<Campaign>> {
     // We should return an empty vector if the config file is not found
     let mut file = match get_campaign_config(Operation::READ) {
         Ok(f) => f,
         Err(e) => match e.kind() {
             ErrorKind::NotFound => return Ok(Vec::new()),
-            _ => return Err(e),
+            _ => bail!(e.kind()),
         },
     };
 
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Ok(_) => {}
-        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "The config folder did not contain valid UTF-8, remove the .config.toml file, which is a hidden file in the current directory and restart the program")),
+        Err(_) => bail!(ConfigError::InvalidConfig),
     };
 
     let config: Config = match toml::from_str(&contents) {
         Ok(d) => d,
-        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Could not read campaigns from the config file, remove the .config.toml file, which is a hidden file in the current directory and restart the program")),
+        Err(_) => bail!(ConfigError::InvalidConfig),
     };
 
     check_integrity(&config)?;
@@ -165,7 +166,7 @@ pub fn read_campaign_from_config() -> Result<Vec<Campaign>, Error> {
 }
 
 /// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
-pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error> {
+pub fn write_campaign_to_config(campaign: Campaign) -> Result<()> {
     let config_item = Config {
         campaigns: vec![campaign.clone()],
     };
@@ -181,18 +182,12 @@ pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), io::Error> {
 }
 
 /// Given an existing campaign name this function will remove this campaign and all the campaigndata from the config file.
-pub fn remove_campaign_from_config(
-    campaign: Campaign,
-    remove_folder: bool,
-) -> Result<(), io::Error> {
+pub fn remove_campaign_from_config(campaign: Campaign, remove_folder: bool) -> Result<()> {
     check_save_removal(&campaign.path)?;
     let campaign_list = read_campaign_from_config()?;
 
     if campaign_list.len() == 0 {
-        return Err(Error::new(
-            ErrorKind::NotFound,
-            "Expected a config folder but could not find one while deleting the campaign",
-        ));
+        bail!(ConfigError::CampaignNotFound);
     }
     if campaign_list.len() == 1 {
         if remove_folder {
@@ -208,12 +203,7 @@ pub fn remove_campaign_from_config(
         .position(|c| c.name == campaign.name)
     {
         Some(i) => i,
-        None => {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                "Could not find the campaign to be deleted in the config folder",
-            ))
-        }
+        None => bail!(ConfigError::CampaignNotFound),
     };
 
     new_campaign_list.swap_remove(index);
@@ -231,7 +221,7 @@ pub fn remove_campaign_from_config(
 }
 
 /// Given a campaign, this function will return whether this campaign exists in the config file
-fn campaign_exists(campaign: &Campaign) -> Result<bool, io::Error> {
+fn campaign_exists(campaign: &Campaign) -> Result<bool> {
     let campaign_list = read_campaign_from_config()?;
     for c in campaign_list {
         if c.name == campaign.name {
@@ -262,7 +252,7 @@ fn get_campaign_config(operation: Operation) -> Result<File, io::Error> {
 }
 
 /// Tries to remove the campaign config file
-fn remove_campaign_config() -> Result<(), io::Error> {
+fn remove_campaign_config() -> Result<()> {
     let mut path = env::current_dir()?;
     path.push(".config.toml");
     fs::remove_file(&path)?;
@@ -272,19 +262,16 @@ fn remove_campaign_config() -> Result<(), io::Error> {
 /// Checks for the integrity of the config file.  
 /// Checks if there are no more campaigns in the file than MAX_CAMPAIGN_AMOUNT  
 /// Checks if there are no duplicate paths in the campaign folder
-fn check_integrity(config: &Config) -> Result<(), io::Error> {
+fn check_integrity(config: &Config) -> Result<()> {
     if config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT) {
-        return Err(Error::new(ErrorKind::OutOfMemory, "There were more campaigns found in the config file then allowed, remove the config file which is a hidden file in the current directory and restart the program"));
+        bail!(ConfigError::TooManyCampaigns);
     }
 
     let mut path_names = Vec::new();
     for campaign in &config.campaigns {
         let path = &campaign.path;
         if path_names.contains(&path) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Multiple campaigns were found with the same image folder path",
-            ));
+            bail!(ConfigError::DuplicateCampaign);
         }
         path_names.push(path);
     }
@@ -293,47 +280,29 @@ fn check_integrity(config: &Config) -> Result<(), io::Error> {
 }
 
 /// Check if there only image files in the folder of the campaign to be removed
-fn check_save_removal(campaign_path: &str) -> Result<(), io::Error> {
+fn check_save_removal(campaign_path: &str) -> Result<()> {
     let files = match fs::read_dir(&campaign_path) {
         Ok(f) => f,
         Err(e) => match e.kind() {
             ErrorKind::NotFound => return Ok(()),
-            ErrorKind::PermissionDenied => {
-                return Err(Error::new(
-                    ErrorKind::PermissionDenied,
-                    "Insufficient permissions to find the image folder of the campaign",
-                ))
-            }
-            _ => return Err(Error::new(
-                ErrorKind::Other,
-                "An unexpected error occured while trying to find the image folder of the campaign",
-            )),
+            ErrorKind::PermissionDenied => bail!(ConfigError::PermissionDenied),
+            _ => bail!(ConfigError::Other),
         },
     };
 
     for file in files {
         let file_path = file?.path();
 
-        let extension_os = match file_path.extension() {
-            Some(e) => e,
-            None => return Err(Error::new(ErrorKind::NotFound, "Could not remove image folder: failed to read the file types in the campaign folder")),
-        };
+        let extension_os = file_path
+            .extension()
+            .context("Could not get file extensions")?;
 
-        let extension = match extension_os.to_str() {
-            Some(e) => e,
-            None => {
-                return Err(Error::new(
-                    ErrorKind::NotFound,
-                    "Could not convert file types into strings",
-                ))
-            }
-        };
+        let extension = extension_os
+            .to_str()
+            .context("Could not convert file types into strings")?;
 
-        if !IMAGE_EXTENSIONS.contains(&extension) && !VIDEO_EXTENSIONS.contains(&extension) {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                "Could not remove image folder: found non-image/non-video files in the campaign image folder",
-            ));
+        if !IMAGE_EXTENSIONS.contains(&extension) {
+            bail!(ConfigError::CouldNotRemove);
         }
     }
 

@@ -14,11 +14,12 @@ use std::{
 use tokio::fs::File;
 use tokio::io::copy;
 
+use anyhow::{bail, Result};
 use gtk::glib::{clone, spawn_future};
 
 use super::config::{Campaign, SynchronizationOption, IMAGE_EXTENSIONS};
-use crate::widgets::progress_bar::ProgressMessage;
-use crate::{config::VIDEO_EXTENSIONS, ui::googledrive_connect::InitializeMessage};
+use crate::ui::googledrive_connect::InitializeMessage;
+use crate::{errors::GoogleDriveError, widgets::progress_bar::ProgressMessage};
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
@@ -44,7 +45,7 @@ pub async fn initialize_client(
         Ok((h, s)) => (h, s),
         Err(e) => {
             sender
-                .send_blocking(InitializeMessage::Error { error: e })
+                .send_blocking(InitializeMessage::Error { error: e.into() })
                 .expect("Drive Frontend channel closed");
             return;
         }
@@ -62,7 +63,7 @@ pub async fn initialize_client(
                             error: Error::new(
                                        ErrorKind::ConnectionAborted,
                                        "Could not close the listening server",
-                                   ),
+                                   ).into(),
                         })
                     .expect("Drive Frontend channel closed");
                     return;
@@ -75,7 +76,7 @@ pub async fn initialize_client(
         Ok(_) => (),
         Err(e) => {
             sender
-                .send_blocking(InitializeMessage::Error { error: e })
+                .send_blocking(InitializeMessage::Error { error: e.into() })
                 .expect("Drive Frontend channel closed");
             return;
         }
@@ -91,7 +92,7 @@ pub async fn initialize_client(
         Ok(_) => (),
         Err(e) => {
             sender
-                .send_blocking(InitializeMessage::Error { error: e })
+                .send_blocking(InitializeMessage::Error { error: e.into() })
                 .expect("Drive Frontend channel closed");
             return;
         }
@@ -112,7 +113,8 @@ pub async fn initialize_client(
                     error: Error::new(
                         ErrorKind::BrokenPipe,
                         "Channel closed while listening on the server",
-                    ),
+                    )
+                    .into(),
                 })
                 .expect("Drive Frontend channel closed");
             return;
@@ -128,7 +130,8 @@ pub async fn initialize_client(
                     error: Error::new(
                         ErrorKind::ConnectionAborted,
                         "Could not close the listening server",
-                    ),
+                    )
+                    .into(),
                 })
                 .expect("Drive Frontend channel closed");
             return;
@@ -149,7 +152,8 @@ pub async fn initialize_client(
                 error: Error::new(
                     ErrorKind::Other,
                     "Could not retrieve the access token from the google response",
-                ),
+                )
+                .into(),
             })
             .expect("Drive Frontend channel closed"),
     };
@@ -226,7 +230,7 @@ pub async fn get_folder_tree(
     folder_result: FolderResult,
     folder_id: String,
     sender: async_channel::Sender<ProgressMessage>,
-) -> Result<FolderResult, io::Error> {
+) -> Result<FolderResult> {
     // The amount of child folders under the current id
     let mut child_folders: usize = 0;
 
@@ -256,7 +260,7 @@ pub async fn get_folder_tree(
                     access_token = refresh_client(&access_token, &refresh_token).await?;
                     continue;
                 } else {
-                    return Err(Error::from(ErrorKind::ConnectionRefused));
+                    bail!(GoogleDriveError::ConnectionRefused);
                 }
             }
         };
@@ -288,17 +292,14 @@ pub async fn get_folder_tree(
         }
         return Ok(folder_result);
     }
-    return Err(Error::new(
-        ErrorKind::NotConnected,
-        "Could not connect to google drive",
-    ));
+    bail!(GoogleDriveError::ConnectionFailed);
 }
 
 /// Gets the total amount of folders in the targets google drive.
 pub async fn get_folder_amount(
     access_token: String,
     refresh_token: String,
-) -> Result<(usize, String, String), Error> {
+) -> Result<(usize, String, String)> {
     configure_environment()?;
     let mut access_token = access_token;
     let refresh_token = refresh_token;
@@ -322,17 +323,14 @@ pub async fn get_folder_amount(
                     access_token = refresh_client(&access_token, &refresh_token).await?;
                     continue;
                 } else {
-                    return Err(Error::from(ErrorKind::ConnectionRefused));
+                    return Err(Error::from(ErrorKind::ConnectionRefused).into());
                 }
             }
         };
 
         return Ok((response.body.len(), access_token, refresh_token));
     }
-    return Err(Error::new(
-        ErrorKind::NotConnected,
-        "Could not connect to google drive",
-    ));
+    return Err(Error::new(ErrorKind::NotConnected, "Could not connect to google drive").into());
 }
 
 /// Checks which files need to be downloaded from the drive and downloads them to the designated
@@ -341,7 +339,7 @@ pub async fn get_folder_amount(
 pub async fn synchronize_files(
     campaign: Campaign,
     sender: async_channel::Sender<ProgressMessage>,
-) -> Result<(Campaign, Vec<String>), io::Error> {
+) -> Result<(Campaign, Vec<String>)> {
     configure_environment()?;
     let (mut access_token, refresh_token, google_drive_sync_folder) = match campaign.sync_option {
         SynchronizationOption::GoogleDrive {
@@ -350,10 +348,7 @@ pub async fn synchronize_files(
             google_drive_sync_folder,
         } => (access_token, refresh_token, google_drive_sync_folder),
         _ => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Called download from drive for a non-googledrive campaign",
-            ))
+            bail!(GoogleDriveError::InternalError);
         }
     };
     let campaign_path = fs::read_dir(&campaign.path)?;
@@ -392,15 +387,13 @@ pub async fn synchronize_files(
                     access_token = refresh_client(&access_token, &refresh_token).await?;
                     continue;
                 } else {
-                    return Err(Error::from(ErrorKind::ConnectionRefused));
+                    bail!(GoogleDriveError::ConnectionFailed);
                 }
             }
         };
         for file in response.body {
             let file_extension = file.name.split('.').last().unwrap_or("");
-            if IMAGE_EXTENSIONS.contains(&file_extension)
-                || VIDEO_EXTENSIONS.contains(&file_extension)
-            {
+            if IMAGE_EXTENSIONS.contains(&file_extension) {
                 drive_files.insert(file.name, file.id);
             }
         }
@@ -411,6 +404,7 @@ pub async fn synchronize_files(
             amount: drive_files.len(),
         })
         .expect("Channel closed");
+    // variable used for the progress bar
     let mut current: usize = 0;
     // vector containing all 'file names' that need to be removed from the campaign path folder
     let mut remove_files = Vec::new();
@@ -436,12 +430,9 @@ pub async fn synchronize_files(
     for file in remove_files {
         match fs::remove_file(format!("{}/{}", campaign.path, file)) {
             Ok(_) => (),
-            Err(e) => {
-                return Err(Error::new(
-                    e.kind(),
-                    format!("Could not remove file: {}", file),
-                ))
-            }
+            Err(_) => bail!(GoogleDriveError::RemoveFile {
+                file: file.to_string()
+            }),
         };
     }
 
@@ -465,7 +456,7 @@ pub async fn synchronize_files(
                         access_token = refresh_client(&access_token, &refresh_token).await?;
                         continue;
                     } else {
-                        return Err(Error::from(ErrorKind::ConnectionRefused));
+                        bail!(GoogleDriveError::ConnectionFailed);
                     }
                 }
             };
@@ -504,7 +495,7 @@ pub async fn synchronize_files(
 
 /// Set the GOOGLE_KEY_ENCODED environment variable to enable calling client::new_from_env
 /// A file named client_secret.json needs to be in the directory of the Dragon-Display program
-fn configure_environment() -> Result<(), io::Error> {
+fn configure_environment() -> Result<()> {
     if let Ok(_) = env::var("GOOGLE_KEY_ENCODED") {
         return Ok(());
     }
@@ -514,20 +505,18 @@ fn configure_environment() -> Result<(), io::Error> {
 
     let mut file = match OpenOptions::new().read(true).open(&path) {
         Ok(f) => f,
-        Err(e) => {
-            match e.kind() {
-                ErrorKind::NotFound => return Err(Error::new(ErrorKind::NotFound, "Could not find client_secret.json file, please see the github readme for information on configuring google drive")),
-                ErrorKind::PermissionDenied => return Err(Error::new(ErrorKind::PermissionDenied, "Could not get permission to read the client_secret.json")),
-                _ => return Err(Error::new(ErrorKind::Other, "Some unknown error occured while trying to read the client_secret.json file")),
-            }
-        }
+        Err(e) => match e.kind() {
+            ErrorKind::NotFound => bail!(GoogleDriveError::ClientSecretNotFound),
+            ErrorKind::PermissionDenied => bail!(GoogleDriveError::PermissionDenied),
+            _ => bail!(GoogleDriveError::ClientSecretError),
+        },
     };
 
     // read the contents of the file to a string
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Ok(_) => (),
-        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "The client_secret.json file contained invalid data, please see the github readme for information on configuring google drive")),
+        Err(_) => bail!(GoogleDriveError::ClientSecretError),
     };
 
     //the variable to add as environment variable (base64 encoded json string)
@@ -539,17 +528,14 @@ fn configure_environment() -> Result<(), io::Error> {
 }
 
 /// takes in an old refresh and access token and returns a new one;
-async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String, Error> {
+async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String> {
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 
     let token = match token {
         Ok(t) => t,
         Err(_) => {
-            return Err(Error::new(
-                ErrorKind::ConnectionRefused,
-                "Re-authentication required",
-            ));
+            bail!(GoogleDriveError::ConnectionRefused);
         }
     };
 

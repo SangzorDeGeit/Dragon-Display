@@ -64,20 +64,6 @@
                         </child>
                         <child>
                             <object class="GtkStackPage">
-                                <property name="name">videos</property>
-                                <property name="title">Videos</property>
-                                <property name="child">
-                                    <object class="GtkBox" id="videos">
-                                        <property name="halign">fill</property>
-                                        <property name="valign">fill</property>
-                                        <property name="hexpand">true</property>
-                                        <property name="vexpand">true</property>
-                                    </object>
-                                </property>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkStackPage">
                                 <property name="name">vtts</property>
                                 <property name="title">VTTs</property>
                                 <property name="child">

@@ -1,5 +1,3 @@
-use std::io::Error;
-
 use adw::Application;
 use async_channel::Sender;
 use google_drive::AccessToken;
@@ -13,7 +11,7 @@ use crate::setup_manager::AddRemoveMessage;
 pub enum InitializeMessage {
     UserConsentUrl { url: String },
     Token { token: AccessToken },
-    Error { error: Error },
+    Error { error: anyhow::Error },
 }
 
 mod imp {

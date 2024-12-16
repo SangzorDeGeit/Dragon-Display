@@ -4,7 +4,7 @@ use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use std::env;
-use std::io::{Error, ErrorKind};
+use anyhow::{bail, Context, Result};
 
 use crate::config::read_campaign_from_config;
 use crate::setup_manager::AddRemoveMessage;
@@ -197,7 +197,7 @@ mod imp {
                             error: Error::new(
                                 ErrorKind::PermissionDenied, 
                                 "Could not find current directory, please try to run again as administrator"
-                                ),
+                                ).into(),
                                 fatal: false,
                         })
                         .expect("Channel closed");
@@ -212,7 +212,7 @@ mod imp {
                             error: Error::new(
                                 ErrorKind::NotFound,
                                 "Could find the current directory",
-                            ),
+                            ).into(),
                             fatal: false,
                         })
                         .expect("Channel closed");
@@ -224,9 +224,7 @@ mod imp {
             match valid_path(&default_path) {
                 Ok(_) => (),
                 Err(e) => {
-                    let errormsg = format!("The default location is invalid: {}", e.to_string());
-                    sender.send_blocking(AddRemoveMessage::Error { 
-                        error: Error::new(e.kind(), errormsg), fatal: false })
+                    sender.send_blocking(AddRemoveMessage::Error { error: e, fatal: false })
                         .expect("Channel closed");
                     return;
                 },
@@ -312,21 +310,14 @@ const ALLOWED_CHARS: [char; 66] = [
 ];
 
 // Validate user input function for the campaign name
-pub fn valid_name(name: &str) -> Result<(), Error> {
+pub fn valid_name(name: &str) -> Result<()> {
     let trimmed_name = name.trim();
 
     if trimmed_name.chars().all(char::is_whitespace) {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "Input may not be all whitespace",
-        ));
-    }
+        bail!("Input may not be all whitespace")     }
 
     if !trimmed_name.chars().all(|x| ALLOWED_CHARS.contains(&x)) {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "Input contained invalid character(s)",
-        ));
+        bail!("Input contained invalid character")
     }
 
     let campaign_list = read_campaign_from_config()?;
@@ -336,39 +327,24 @@ pub fn valid_name(name: &str) -> Result<(), Error> {
 
     for campaign in campaign_list {
         if campaign.name == trimmed_name {
-            return Err(Error::new(ErrorKind::InvalidInput, "name already exists"));
+            bail!("Name already exists");
         }
     }
 
     Ok(())
 }
 
-pub fn valid_path(path: &str) -> Result<(), Error> {
+pub fn valid_path(path: &str) -> Result<()> {
     let campaign_list = read_campaign_from_config()?;
     for campaign in campaign_list {
         if campaign.path == path {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                "Another campaign already uses this folder",
-            ));
+            bail!("Another campaign already uses this folder")
         }
     }
-
-    let current_dir = match env::current_dir() {
-        Ok(d) => d,
-        Err(_) => return Ok(()),
-    };
-
-    let current_dir_str = match current_dir.to_str() {
-        Some(s) => s,
-        None => return Ok(()),
-    };
-
+    let current_dir = env::current_dir()?;
+    let current_dir_str = current_dir.to_str().context("Could not convert current directory to a string")?;
     if path == current_dir_str {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "Cannot use the current working directory as a folder for campaign images",
-        ));
+        bail!("Cannot use the current working directory as a folder for campaign images")
     }
 
     Ok(())

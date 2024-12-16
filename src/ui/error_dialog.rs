@@ -1,5 +1,3 @@
-use std::io::Error;
-
 use adw::Application;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -85,7 +83,7 @@ glib::wrapper! {
 }
 
 impl ErrorDialog {
-    pub fn new(app: &Application, error: Error, fatal: bool) -> Self {
+    pub fn new(app: &Application, error: anyhow::Error, fatal: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

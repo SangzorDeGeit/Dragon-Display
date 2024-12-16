@@ -1,12 +1,9 @@
 use gtk::glib::clone;
 use gtk::{gdk_pixbuf::PixbufRotation, glib::timeout_future_seconds};
 use std::cell::Cell;
-use std::{
-    cell::RefCell,
-    io::{Error, ErrorKind},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
+use crate::errors::GoogleDriveError;
 use crate::{
     config::{write_campaign_to_config, Campaign},
     setup_manager::{googledrive_connect, CallingFunction},
@@ -34,7 +31,7 @@ pub enum ControlWindowMessage {
     Refresh { sender: Sender<()> },
     Options { sender: Sender<()> },
     Rotate { rotation: PixbufRotation },
-    Error { error: Error, fatal: bool },
+    Error { error: anyhow::Error, fatal: bool },
 }
 
 /// Makes the control and display window and sends signals between them
@@ -104,12 +101,7 @@ pub fn refresh(app: &adw::Application, campaign: Campaign, sender: Sender<()>) {
                 Ok((campaign, failed)) => {
                     window.destroy();
                     if failed.len() > 0 {
-                        let failed_files = failed.join(", ");
-                        let errormsg = format!(
-                            "The following files could not be downloaded:\n{}",
-                            failed_files
-                        );
-                        ErrorDialog::new(&app, Error::new(ErrorKind::Unsupported, errormsg), false)
+                        ErrorDialog::new(&app, GoogleDriveError::DownloadFailed { files: failed }.into(), false)
                             .present();
                     }
                     match write_campaign_to_config(campaign.clone()) {
@@ -117,17 +109,23 @@ pub fn refresh(app: &adw::Application, campaign: Campaign, sender: Sender<()>) {
                         Err(error) => ErrorDialog::new(&app, error, true).present(),
                     }
                 }
-                Err(e) => match e.kind() {
-                    ErrorKind::ConnectionRefused => {
-                        window.destroy();
-                        googledrive_connect(
-                            &app,
-                            campaign.clone(),
-                            CallingFunction::Refresh { sender: sender.clone() },
-                        )
+                Err(e) => {
+                    if let Some(gd_error) = e.downcast_ref::<GoogleDriveError>() {
+                        match gd_error {
+                            GoogleDriveError::ConnectionRefused => {
+                                window.destroy();
+                                googledrive_connect(
+                                    &app,
+                                    campaign.clone(),
+                                    CallingFunction::Refresh { sender: sender.clone() },
+                                )
+                            }
+                            _ => ErrorDialog::new(&app, e.into(), false).present(),
+                        }
+                    } else {
+                        ErrorDialog::new(&app, e.into(), false).present();
                     }
-                    _ => ErrorDialog::new(&app, e, false).present(),
-                },
+                }
             }
         }
     }));

@@ -3,12 +3,12 @@ use async_channel::Sender;
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
-use std::io::Error;
 
 use crate::config::Campaign;
 use crate::google_drive::synchronize_files;
 use crate::runtime;
 use crate::widgets::progress_bar::DdProgressBar;
+use anyhow::Result;
 
 mod imp {
 
@@ -70,7 +70,7 @@ impl GoogledriveSynchronizeWindow {
     pub fn new(
         app: &Application,
         campaign: Campaign,
-        sender: Sender<Result<(Campaign, Vec<String>), Error>>,
+        sender: Sender<Result<(Campaign, Vec<String>)>>,
     ) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();

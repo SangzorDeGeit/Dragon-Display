@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::config::IMAGE_EXTENSIONS;
 use crate::program_manager::ControlWindowMessage;
 use crate::widgets::thumbnail_image::DdThumbnailImage;
 use crate::APP_ID;
@@ -8,8 +8,6 @@ use async_channel::Sender;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{glib, Grid};
 use gtk::{prelude::*, ToggleButton};
-
-use super::thumbnail_video::DdThumbnailVideo;
 
 mod imp {
     use async_channel::Sender;
@@ -178,7 +176,6 @@ impl DdThumbnailGrid {
         let mut filling_page = 0;
         let mut i = 0;
         let mut thumbnail_image: DdThumbnailImage;
-        let mut thumbnail_video: DdThumbnailVideo;
         for file in files {
             // the validity of th extension was already checked in control_window
             let extension = file
@@ -197,17 +194,6 @@ impl DdThumbnailGrid {
                 thumbnail_image.set_vexpand(true);
                 prev_button = Some(thumbnail_image.get_togglebutton());
                 filling_grid.attach(&thumbnail_image, i % column, i / column, 1, 1);
-            } else if VIDEO_EXTENSIONS.contains(&extension) {
-                thumbnail_video = DdThumbnailVideo::new(&file, sender.clone(), prev_button);
-                let filling_grid = page_vec
-                    .get(filling_page)
-                    .expect("Not enough pages created");
-                thumbnail_video.set_halign(gtk::Align::Fill);
-                thumbnail_video.set_valign(gtk::Align::Fill);
-                thumbnail_video.set_hexpand(true);
-                thumbnail_video.set_vexpand(true);
-                prev_button = Some(thumbnail_video.get_togglebutton());
-                filling_grid.attach(&thumbnail_video, i % column, i / column, 1, 1);
             } else {
                 continue;
             }

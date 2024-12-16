@@ -7,10 +7,9 @@ use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use gtk::{prelude::*, Label};
 
-use crate::config::{Campaign, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::config::{Campaign, IMAGE_EXTENSIONS};
 use crate::program_manager::ControlWindowMessage;
 use crate::widgets::image_page::DdImagePage;
-use crate::widgets::video_page::DdVideoPage;
 
 mod imp {
 
@@ -37,8 +36,6 @@ mod imp {
         pub stackswitcher: TemplateChild<StackSwitcher>,
         #[template_child]
         pub images: TemplateChild<Box>,
-        #[template_child]
-        pub videos: TemplateChild<Box>,
         #[template_child]
         pub vtts: TemplateChild<Box>,
         pub campaign: RefCell<Campaign>,
@@ -167,7 +164,7 @@ impl ControlWindow {
             Err(e) => {
                 sender
                     .send_blocking(ControlWindowMessage::Error {
-                        error: e,
+                        error: e.into(),
                         fatal: true,
                     })
                     .expect("Channel closed");
@@ -177,7 +174,7 @@ impl ControlWindow {
         if let Some(current_page) = imp.images.first_child() {
             imp.images.remove(&current_page);
         }
-        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+        let (image_files, _non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
             .filter_map(|f| f.ok())
             .map(|f| f.path())
             .filter(|f| f.to_str().is_some() && f.extension().is_some())
@@ -199,35 +196,6 @@ impl ControlWindow {
             image_page.set_hexpand(true);
             image_page.set_vexpand(true);
             imp.images.append(&image_page);
-        }
-
-        // create new video page append it to the video box
-        if let Some(current_page) = imp.videos.first_child() {
-            imp.videos.remove(&current_page);
-        }
-        let (video_files, _non_video_files): (Vec<PathBuf>, Vec<PathBuf>) = non_image_files
-            .into_iter()
-            .partition(|f| VIDEO_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
-        if video_files.len() == 0 {
-            let label = Label::builder()
-                .label("You do not have any videos. Please be aware that adding videos could decrease performance of the program. Videos are not recommended when running on weak systems")
-                .justify(gtk::Justification::Center)
-                .halign(gtk::Align::Center)
-                .valign(gtk::Align::Center)
-                .hexpand(true)
-                .vexpand(true)
-                .wrap(true)
-                .wrap_mode(gtk::pango::WrapMode::Word)
-                .max_width_chars(40)
-                .build();
-            imp.videos.append(&label);
-        } else {
-            let video_page = DdVideoPage::new(sender, video_files);
-            video_page.set_halign(gtk::Align::Fill);
-            video_page.set_valign(gtk::Align::Fill);
-            video_page.set_hexpand(true);
-            video_page.set_vexpand(true);
-            imp.videos.append(&video_page);
         }
 
         // create new vtt page append it to the vtt box
