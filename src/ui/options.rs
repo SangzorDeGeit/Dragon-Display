@@ -5,6 +5,8 @@ use gtk::{gio, glib};
 use gtk::{prelude::*, Adjustment};
 
 use crate::APP_ID;
+pub const MAX_COLUMN_ROW_AMOUNT: f64 = 20.0;
+pub const MIN_COLUMN_ROW_AMOUNT: f64 = 0.0;
 
 mod imp {
     use async_channel::Sender;
@@ -106,6 +108,10 @@ impl DdOptionsWindow {
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
         let imp = object.imp();
+        imp.row
+            .set_range(MIN_COLUMN_ROW_AMOUNT, MAX_COLUMN_ROW_AMOUNT);
+        imp.column
+            .set_range(MIN_COLUMN_ROW_AMOUNT, MAX_COLUMN_ROW_AMOUNT);
         imp.sender.replace(Some(sender));
         let settings = gtk::gio::Settings::new(APP_ID);
         let columns = settings.int("imagegrid-column-amount") as f64;

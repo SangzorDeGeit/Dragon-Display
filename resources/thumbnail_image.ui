@@ -30,6 +30,7 @@
                             <object class="GtkLabel" id="label">
                                 <property name="hexpand">true</property>
                                 <property name="vexpand">true</property>
+                                <property name="ellipsize">middle</property>
                             </object>
                         </child>
                     </object>
