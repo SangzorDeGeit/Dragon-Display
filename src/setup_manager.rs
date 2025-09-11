@@ -314,7 +314,7 @@ fn select_monitor(app: &adw::Application, campaign: Campaign) {
         while let Ok(message) = receiver.recv().await {
             match message {
                 Ok(monitor) => {
-                    window.destroy();
+                    window.hide();
                     dragon_display(&app, campaign.clone(), monitor)
                 },
                 Err(error) => {

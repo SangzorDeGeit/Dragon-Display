@@ -91,8 +91,8 @@ impl DdThumbnailImage {
         imp.icon.set_file(Some(&file));
         imp.icon.set_content_fit(gtk::ContentFit::Fill);
         imp.label.set_text(file_name);
-        imp.button.set_group(prev_button);
 
+        imp.button.set_group(prev_button);
         imp.button.connect_clicked(move |_| {
             sender
                 .send_blocking(ControlWindowMessage::Image {

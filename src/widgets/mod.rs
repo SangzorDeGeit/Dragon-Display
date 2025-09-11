@@ -7,3 +7,4 @@ pub mod progress_bar;
 pub mod remove_button;
 pub mod thumbnail_grid;
 pub mod thumbnail_image;
+pub mod thumbnail_video;

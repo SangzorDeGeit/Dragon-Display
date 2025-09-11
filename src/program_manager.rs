@@ -1,6 +1,8 @@
 use gtk::glib::clone;
+use gtk::MediaFile;
 use gtk::{gdk_pixbuf::PixbufRotation, glib::timeout_future_seconds};
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::errors::GoogleDriveError;
@@ -21,13 +23,13 @@ pub enum DisplayWindowMessage {
     Image { picture_path: String },
     Fit { fit: bool },
     Rotate { rotation: PixbufRotation },
-    Video { video_path: String },
+    Video { video_path: PathBuf },
 }
 
 pub enum ControlWindowMessage {
     Image { picture_path: String },
     Fit { fit: bool },
-    Video { video_path: String },
+    Video { video_path: PathBuf },
     Refresh { sender: Sender<()> },
     Options { sender: Sender<()> },
     Rotate { rotation: PixbufRotation },
@@ -63,7 +65,8 @@ pub fn dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monit
                     },
                     ControlWindowMessage::Fit { fit } => display_sender.send_blocking(DisplayWindowMessage::Fit { fit }).expect("Channel closed"),
                     ControlWindowMessage::Video { video_path } => {
-                        current_path.replace(video_path.clone());
+                        let file_path = video_path.to_str().expect("Could not obtain file path");
+                        current_path.replace(file_path.to_string());
                         display_sender.send_blocking(DisplayWindowMessage::Video { video_path })
                         .expect("Channel closed");
                     },
@@ -83,6 +86,7 @@ pub fn dragon_display(app: &adw::Application, campaign: Campaign, monitor: Monit
     control_window.connect_destroy(
         clone!(@strong app, @strong control_window, @strong display_window => move |_| {
             display_window.destroy();
+            app.quit();
         }),
     );
 

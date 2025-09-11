@@ -7,9 +7,10 @@ use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use gtk::{prelude::*, Label};
 
-use crate::config::{Campaign, IMAGE_EXTENSIONS};
+use crate::config::{Campaign, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 use crate::program_manager::ControlWindowMessage;
 use crate::widgets::image_page::DdImagePage;
+use crate::widgets::thumbnail_grid::DdThumbnailGrid;
 
 mod imp {
 
@@ -36,6 +37,8 @@ mod imp {
         pub stackswitcher: TemplateChild<StackSwitcher>,
         #[template_child]
         pub images: TemplateChild<Box>,
+        #[template_child]
+        pub videos: TemplateChild<Box>,
         #[template_child]
         pub vtts: TemplateChild<Box>,
         pub campaign: RefCell<Campaign>,
@@ -119,6 +122,12 @@ mod imp {
             // Call "constructed" on parent
             self.parent_constructed();
         }
+
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
     }
 
     // Trait shared by all widgets
@@ -171,10 +180,12 @@ impl ControlWindow {
                 return;
             }
         };
+        // Remove the image page if it exists before creating a new image page
         if let Some(current_page) = imp.images.first_child() {
             imp.images.remove(&current_page);
         }
-        let (image_files, _non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+        // Seperate image files and non-image files
+        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
             .filter_map(|f| f.ok())
             .map(|f| f.path())
             .filter(|f| f.to_str().is_some() && f.extension().is_some())
@@ -196,6 +207,31 @@ impl ControlWindow {
             image_page.set_hexpand(true);
             image_page.set_vexpand(true);
             imp.images.append(&image_page);
+        }
+
+        // create new video page append it to the video box
+        if let Some(current_page) = imp.videos.first_child() {
+            imp.videos.remove(&current_page);
+        }
+        let (video_files, _non_video_files): (Vec<PathBuf>, Vec<PathBuf>) = non_image_files
+            .into_iter()
+            .partition(|f| VIDEO_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
+        if video_files.len() == 0 {
+            let label = Label::builder()
+                .label("You do not have any videos")
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .vexpand(true)
+                .build();
+            imp.videos.append(&label);
+        } else {
+            let video_page = DdThumbnailGrid::new(sender.clone(), video_files);
+            video_page.set_halign(gtk::Align::Fill);
+            video_page.set_valign(gtk::Align::Fill);
+            video_page.set_hexpand(true);
+            video_page.set_vexpand(true);
+            imp.videos.append(&video_page);
         }
 
         // create new vtt page append it to the vtt box
