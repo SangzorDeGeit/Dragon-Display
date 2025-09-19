@@ -19,9 +19,11 @@ use crate::widgets::progress_bar::ProgressMessage;
 mod imp {
 
     use async_channel::Sender;
+    use gtk::glib::subclass::Signal;
     use gtk::prelude::*;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
@@ -71,52 +73,45 @@ mod imp {
     impl DdGoogleFolderSelectWindow {
         #[template_callback]
         fn handle_cancel(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Cancel)
-                .expect("Channel closed");
+            self.obj().emit_by_name::<()>("cancel", &[]);
         }
 
         #[template_callback]
         fn handle_refresh(&self, button: Button) {
+            self.obj().emit_by_name::<()>("refresh", &[]);
+            self.choose_button.set_sensitive(false);
+            button.set_sensitive(false);
+            todo!("remove the following:");
             self.load_select_widget.remove(
                 &self
                     .load_select_widget
                     .first_child()
                     .expect("No child found"),
             );
-            self.choose_button.set_sensitive(false);
-            button.set_sensitive(false);
-            self.selected_id.replace("".to_string());
             super::DdGoogleFolderSelectWindow::initialize(self);
         }
 
         #[template_callback]
         fn handle_choose(&self, _: Button) {
-            let old_campaign = self.campaign.borrow().clone();
-            let (name, path, access, refresh, _) = old_campaign.get_campaign_data();
-            let new_campaign = Campaign::new_googledrive(
-                name,
-                path,
-                access,
-                refresh,
-                self.selected_id.borrow().clone(),
-            );
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Campaign {
-                    campaign: new_campaign,
-                })
-                .expect("Channel closed");
+            let gd_path = self.selected_id.borrow().clone();
+            self.obj().emit_by_name::<()>("choose", &[&gd_path]);
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for DdGoogleFolderSelectWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("choose")
+                        .param_types([String::static_type()])
+                        .build(),
+                    Signal::builder("cancel").build(),
+                    Signal::builder("refresh").build(),
+                ]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -141,16 +136,28 @@ glib::wrapper! {
 }
 
 impl DdGoogleFolderSelectWindow {
-    pub fn new(app: &Application, campaign: Campaign, sender: Sender<AddRemoveMessage>) -> Self {
+    pub fn new(app: &Application) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
-        let imp = object.imp();
-        imp.campaign.replace(campaign);
-        imp.sender.replace(Some(sender));
-
-        Self::initialize(&imp);
         object
+    }
+
+    pub fn set_progress_bar(&self, progbar: &DdProgressBar) {
+        if let Some(child) = self.imp().load_select_widget.first_child() {
+            self.imp().load_select_widget.remove(&child);
+        }
+        self.imp().load_select_widget.append(progbar);
+    }
+
+    pub fn set_foldertree(&self, foldertree: &DdGoogleFolderTree) {
+        if let Some(child) = self.imp().load_select_widget.first_child() {
+            self.imp().load_select_widget.remove(&child);
+        }
+        self.imp().load_select_widget.append(foldertree);
+        self.imp().message_label.set_text(
+            "Select a folder where Dragon Display will download the images from. Current location:",
+        );
     }
 
     /// this initialize function is called after the input variables for new() are set
@@ -173,7 +180,7 @@ impl DdGoogleFolderSelectWindow {
         imp.selection_label.set_text("");
 
         // Create and add the progressbar
-        let progress_bar = DdProgressBar::new(progress_receiver);
+        let progress_bar = DdProgressBar::new();
         imp.load_select_widget.append(&progress_bar);
 
         // await for result from backend process

@@ -1,4 +1,4 @@
-use std::fs::read_dir;
+use std::fs::{read_dir, ReadDir};
 use std::path::PathBuf;
 
 use adw::Application;
@@ -15,10 +15,12 @@ use crate::widgets::thumbnail_grid::DdThumbnailGrid;
 mod imp {
 
     use std::cell::RefCell;
+    use std::sync::OnceLock;
 
     use async_channel::Sender;
     use glib::subclass::InitializingObject;
     use gtk::glib::spawn_future_local;
+    use gtk::glib::subclass::Signal;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Stack, StackSwitcher};
@@ -160,12 +162,12 @@ impl ControlWindow {
         imp.campaign.replace(campaign.clone());
         imp.sender.replace(Some(sender.clone()));
         imp.stackswitcher.set_stack(Some(&imp.stack));
-        object.update_widgets();
+        object.initialize();
 
         object
     }
 
-    pub fn update_widgets(&self) {
+    pub fn initialize(&self) {
         let imp = self.imp();
         let sender = imp.sender.borrow().clone().expect("No sender found");
         let files = match read_dir(&imp.campaign.borrow().path) {
@@ -180,16 +182,21 @@ impl ControlWindow {
                 return;
             }
         };
-        // Remove the image page if it exists before creating a new image page
-        if let Some(current_page) = imp.images.first_child() {
-            imp.images.remove(&current_page);
-        }
-        // Seperate image files and non-image files
-        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+        // turn files into a vec<pathbuf>
+        let files: Vec<PathBuf> = files
             .filter_map(|f| f.ok())
             .map(|f| f.path())
             .filter(|f| f.to_str().is_some() && f.extension().is_some())
             .filter(|f| f.extension().unwrap().to_str().is_some())
+            .collect();
+        // Remove the image page if it exists before creating a new image page
+        if let Some(current_page) = imp.images.first_child() {
+            imp.images.remove(&current_page);
+        }
+
+        // Seperate image files and non-image files
+        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+            .into_iter()
             .partition(|f| IMAGE_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
         if image_files.len() == 0 {
             let label = Label::builder()
@@ -232,6 +239,74 @@ impl ControlWindow {
             video_page.set_hexpand(true);
             video_page.set_vexpand(true);
             imp.videos.append(&video_page);
+        }
+    }
+
+    /// Update the existing widgets according to the new gotten files
+    pub fn update_widgets(&self) {
+        let imp = self.imp();
+        let sender = imp.sender.borrow().clone().expect("No sender found");
+        let files = match read_dir(&imp.campaign.borrow().path) {
+            Ok(f) => f,
+            Err(e) => {
+                sender
+                    .send_blocking(ControlWindowMessage::Error {
+                        error: e.into(),
+                        fatal: true,
+                    })
+                    .expect("Channel closed");
+                return;
+            }
+        };
+        // turn files into a vec of pathbufs
+        let files: Vec<PathBuf> = files
+            .filter_map(|f| f.ok())
+            .map(|f| f.path())
+            .filter(|f| f.to_str().is_some() && f.extension().is_some())
+            .filter(|f| f.extension().unwrap().to_str().is_some())
+            .collect();
+
+        // Seperate image files and non-image files
+        let (image_files, non_image_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+            .into_iter()
+            .partition(|f| IMAGE_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
+        if image_files.len() == 0 {
+            let label = Label::builder()
+                .label("You do not have any images")
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .vexpand(true)
+                .build();
+            imp.images.append(&label);
+        } else {
+            imp.images
+                .first_child()
+                .expect("No child found")
+                .downcast::<DdThumbnailGrid>()
+                .expect("Expected a thumbnailgrid")
+                .update(image_files);
+        }
+
+        let (video_files, _non_video_files): (Vec<PathBuf>, Vec<PathBuf>) = non_image_files
+            .into_iter()
+            .partition(|f| VIDEO_EXTENSIONS.contains(&f.extension().unwrap().to_str().unwrap()));
+        if video_files.len() == 0 {
+            let label = Label::builder()
+                .label("You do not have any videos")
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .vexpand(true)
+                .build();
+            imp.videos.append(&label);
+        } else {
+            imp.videos
+                .first_child()
+                .expect("No child found")
+                .downcast::<DdThumbnailGrid>()
+                .expect("Expected a thumbnailgrid")
+                .update(video_files);
         }
 
         // create new vtt page append it to the vtt box

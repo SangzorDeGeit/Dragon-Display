@@ -34,7 +34,7 @@ pub struct FolderResult {
     pub refresh_token: String,
 }
 
-/// Initializes a google drive client using the oauth process
+/// Initialize a google drive client using the oauth process
 pub async fn initialize_client(
     sender: async_channel::Sender<InitializeMessage>,
     server_terminator: async_channel::Receiver<()>,
@@ -528,7 +528,7 @@ fn configure_environment() -> Result<()> {
 }
 
 /// takes in an old refresh and access token and returns a new one;
-async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String> {
+pub async fn refresh_client(access_token: &str, refresh_token: &str) -> Result<String> {
     let google_drive_client = Client::new_from_env(access_token, refresh_token).await;
     let token = google_drive_client.refresh_access_token().await;
 

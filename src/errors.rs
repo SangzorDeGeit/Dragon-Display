@@ -1,23 +1,50 @@
+use serde::ser::StdError;
+use snafu::prelude::*;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("The config file got corrupted. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    InvalidConfig,
-    #[error("Too many campaigns found in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    TooManyCampaigns,
-    #[error("Found a duplicate in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    DuplicateCampaign,
-    #[error("Could not get permission to access the config file")]
-    PermissionDenied,
-    #[error("Could not find the campaign to be removed")]
-    CampaignNotFound,
-    #[error("Could not remove campaign folder: found non-media files")]
-    CouldNotRemove,
-    #[error("Could not create the folder to put the images in")]
-    FolderCreationError,
-    #[error("An internal error occurred")]
-    Other,
+#[derive(Debug, Snafu)]
+pub enum DragonDisplayError {
+    #[snafu(display("{}", msg), visibility(pub))]
+    ConnectionRefused {
+        source: std::boxed::Box<dyn StdError + std::marker::Send + Sync>,
+        msg: String,
+    },
+    #[snafu(display("Failed to send message to server"), visibility(pub))]
+    SendMessageError {
+        source: std::sync::mpsc::SendError<()>,
+    },
+    #[snafu(
+        display("There was a problem with the client secret, follow the instructions on the github page for more info"),
+        visibility(pub)
+    )]
+    ClientSecretError { source: std::io::Error },
+    #[snafu(display("{}", msg), visibility(pub))]
+    IOError { source: std::io::Error, msg: String },
+    #[snafu(display("{}", msg), visibility(pub))]
+    RecvError {
+        source: std::sync::mpsc::RecvError,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
+    SerializeError {
+        source: toml::de::Error,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
+    ClientError {
+        source: google_drive::ClientError,
+        msg: String,
+    },
+    #[snafu(display("The inputted name is invalid: {}", msg), visibility(pub))]
+    InvalidName { msg: String },
+    #[snafu(display("Cannot use path: {}", msg), visibility(pub))]
+    InvalidPath { msg: String },
+    #[snafu(display("Address in use"), visibility(pub))]
+    AddressInUse,
+    #[snafu(display("{}", msg), visibility(pub))]
+    InvalidData { msg: String },
+    #[snafu(display("{}", msg), visibility(pub))]
+    Other { msg: String },
 }
 
 #[derive(Error, Debug)]

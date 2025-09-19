@@ -2,6 +2,9 @@ use adw::Application;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use snafu::Report;
+
+use crate::errors::DragonDisplayError;
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -83,13 +86,21 @@ glib::wrapper! {
 }
 
 impl ErrorDialog {
-    pub fn new(app: &Application, error: anyhow::Error, fatal: bool) -> Self {
+    pub fn new(app: &Application, error: DragonDisplayError, fatal: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
+        object.set_property("modal", true);
         let imp = object.imp();
-        imp.error_msg.replace(error.to_string());
-        imp.fatal.replace(fatal);
+
+        let report = Report::from_error(error);
+        let message: String;
+        if fatal {
+            message = format!("A fatal error occured:\n {}", report.to_string());
+        } else {
+            message = format!("{}", report.to_string());
+        }
+        imp.message_label.set_label(&message);
 
         Self::initialize(&imp);
         object

@@ -24,8 +24,9 @@ futures = "0.3.29"
 async-channel = "2.3.1"
 async-recursion = "1.1.1"
 reqwest = {version="0.10.10", features=["json", "blocking"]}
-thiserror = "1.0.66"
 anyhow = "1.0.93"
+snafu = "0.8"
+thiserror = "2.0"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

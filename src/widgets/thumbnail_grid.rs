@@ -15,7 +15,6 @@ mod imp {
     use async_channel::Sender;
     use std::cell::{Cell, RefCell};
 
-    use glib::subclass::prelude::*;
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, CompositeTemplate, Grid};
@@ -230,5 +229,22 @@ impl DdThumbnailGrid {
             );
         }
         imp.page_vec.replace(page_vec);
+    }
+
+    /// Update the thumbnail grid with the new data
+    pub fn update(&self, files: Vec<PathBuf>) {
+        let settings = gtk::gio::Settings::new(APP_ID);
+        let mut column = settings.int("imagegrid-column-amount");
+        let mut row = settings.int("imagegrid-row-amount");
+        if column <= 0 {
+            column = 3;
+        }
+        if row <= 0 {
+            row = 3;
+        }
+        let file_amount = files.len() as f64;
+        let files_per_page = (row * column) as f64;
+
+        todo!("Instead of creating a new thumbnail grid, update all the current buttons, removing any that are not necessary anymore");
     }
 }

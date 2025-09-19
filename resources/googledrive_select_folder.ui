@@ -18,12 +18,14 @@
                     <object class="GtkLabel" id="message_label">
                         <property name="halign">fill</property>
                         <property name="hexpand">true</property>
+                        <property name="label">Dragon Display is getting your google drive folder data</property>
                     </object>
                 </child>
                 <child>
                     <object class="GtkLabel" id="selection_label">
                         <property name="halign">fill</property>
                         <property name="hexpand">true</property>
+                        <property name="label"></property>
                     </object>
                 </child>
                 <child>

@@ -1,23 +1,25 @@
 use adw::Application;
-use async_channel::Sender;
+use gtk::glib::clone;
 use gtk::prelude::ObjectExt;
-use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use gtk::{prelude::*, Button};
 
+use crate::campaign::DdCampaign;
 use crate::config::Campaign;
-use crate::setup_manager::AddRemoveMessage;
-use crate::widgets::remove_button::RemoveButton;
 
 mod imp {
     use std::cell::RefCell;
+    use std::sync::OnceLock;
 
     use async_channel::Sender;
     use glib::subclass::InitializingObject;
-    use gtk::prelude::StaticTypeExt;
+    use gtk::glib::subclass::Signal;
+    use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Grid};
 
+    use crate::campaign::DdCampaign;
     use crate::config::Campaign;
     use crate::setup_manager::AddRemoveMessage;
 
@@ -28,7 +30,6 @@ mod imp {
         #[template_child]
         pub campaign_grid: TemplateChild<Grid>,
         pub sender: RefCell<Option<Sender<AddRemoveMessage>>>,
-        pub campaign_list: RefCell<Vec<Campaign>>,
     }
 
     // The central trait for subclassing a GObject
@@ -54,17 +55,25 @@ mod imp {
     impl RemoveCampaignWindow {
         #[template_callback]
         fn handle_cancel(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Cancel)
-                .expect("Channel closed");
+            let obj = self.obj();
+            obj.emit_by_name::<()>("cancel", &[]);
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for RemoveCampaignWindow {
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("cancel").build(),
+                    Signal::builder("remove")
+                        .param_types([DdCampaign::static_type()])
+                        .build(),
+                ]
+            })
+        }
+
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -89,30 +98,50 @@ glib::wrapper! {
 }
 
 impl RemoveCampaignWindow {
-    pub fn new(
-        app: &Application,
-        sender: Option<Sender<AddRemoveMessage>>,
-        campaign_list: Vec<Campaign>,
-    ) -> Self {
+    pub fn new(app: &Application, campaign_list: Vec<Campaign>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        imp.campaign_list.replace(campaign_list);
-        imp.sender.replace(sender);
         object.set_property("application", app);
 
-        Self::initialize(&object.imp());
+        let mut index = 0;
+        for campaign in campaign_list {
+            let button = Button::builder().label(&campaign.name).build();
+            imp.campaign_grid
+                .attach(&button, index % 4, index / 4, 1, 1);
+
+            let campaign = DdCampaign::new(campaign);
+            button.connect_clicked(
+                clone!(@weak object => move |_| object.emit_by_name::<()>("remove", &[&campaign])),
+            );
+
+            index += 1;
+        }
         object
     }
 
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::RemoveCampaignWindow) {
-        let mut index = 0;
-        for campaign in imp.campaign_list.borrow().iter() {
-            let button = RemoveButton::new(campaign.clone(), imp.sender.borrow().clone());
-            imp.campaign_grid
-                .attach(&button, index % 4, index / 4, 1, 1);
-            index += 1;
-        }
+    /// Signal emitted when a campaign button is clicked to be removed
+    pub fn connect_remove<F: Fn(&Self, DdCampaign) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "remove",
+            true,
+            glib::closure_local!(|window, campaign| {
+                f(window, campaign);
+            }),
+        )
+    }
+
+    /// The signal emitted when the cancel button is clicked
+    pub fn connect_cancel<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "cancel",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
     }
 }

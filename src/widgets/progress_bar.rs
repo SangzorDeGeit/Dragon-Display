@@ -10,7 +10,7 @@ pub enum ProgressMessage {
 
 mod imp {
     use super::ProgressMessage;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use async_channel::Receiver;
     use glib::subclass::InitializingObject;
@@ -24,6 +24,8 @@ mod imp {
     pub struct DdProgressBar {
         #[template_child]
         pub progress_bar: TemplateChild<ProgressBar>,
+        pub current: Cell<usize>,
+        pub total: Cell<usize>,
         pub update_receiver: RefCell<Option<Receiver<ProgressMessage>>>,
     }
 
@@ -71,45 +73,44 @@ glib::wrapper! {
 }
 
 impl DdProgressBar {
-    pub fn new(receiver: Receiver<ProgressMessage>) -> Self {
+    pub fn new() -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
-        let imp = object.imp();
-        imp.update_receiver.replace(Some(receiver));
-
-        Self::await_updates(&imp);
+        object.imp().total.set(1);
+        object.imp().current.set(0);
         object
     }
 
-    /// this initialize function is called after the input variables for new() are set
-    fn await_updates(imp: &imp::DdProgressBar) {
-        let receiver = imp
-            .update_receiver
-            .borrow()
-            .to_owned()
-            .expect("No receiver found");
-        let progress_bar = imp.progress_bar.clone();
-        let mut total = 1.0;
-        let mut current = 0.0;
-        spawn_future_local(async move {
-            while let Ok(update) = receiver.recv().await {
-                match update {
-                    ProgressMessage::Current { amount } => {
-                        let new_current = current + amount as f64;
-                        if new_current < total {
-                            current = new_current;
-                        }
-                        let fraction = new_current / total;
-                        progress_bar.set_fraction(fraction);
-                        progress_bar.set_text(Some(&format!("{}/{}", new_current, total)));
-                    }
-                    ProgressMessage::Total { amount } => {
-                        if amount > 0 {
-                            total = amount as f64;
-                        }
-                    }
-                }
-            }
-        });
+    /// Update the total, will do nothing if the output is not at least 1 or the total current
+    /// amount
+    pub fn update_total(&self, total: usize) {
+        let current = self.imp().current.get();
+        if total <= 0 || total <= current {
+            return;
+        }
+        self.imp().total.set(total);
+
+        let text = format!("{}/{}", current, total);
+        let fraction = current as f64 / total as f64;
+
+        self.imp().progress_bar.set_text(Some(&text));
+        self.imp().progress_bar.set_fraction(fraction);
+    }
+
+    /// Update the current progress adding the amount to the current value, this function will not
+    /// update if the new total current is higher then the total
+    pub fn update_progress(&self, amount: usize) {
+        let total = self.imp().total.get();
+        let current = self.imp().current.get() + amount;
+        if current >= total {
+            return;
+        }
+        self.imp().current.set(current);
+
+        let text = format!("{}/{}", current, self.imp().total.get());
+        let fraction = self.imp().current.get() as f64 / self.imp().total.get() as f64;
+
+        self.imp().progress_bar.set_text(Some(&text));
+        self.imp().progress_bar.set_fraction(fraction);
     }
 }

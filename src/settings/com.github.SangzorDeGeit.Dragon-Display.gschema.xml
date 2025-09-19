@@ -2,7 +2,7 @@
 <!DOCTYPE xml>
 <schemalist>
     <schema id="com.github.SangzorDeGeit.Dragon-Display"
-        path="/com/github/SangzorDeGeid/Dragon-Display/">
+        path="/com/github/SangzorDeGeit/Dragon-Display/">
         <key name="imagegrid-column-amount" type="i">
             <default>3</default>
             <summary>Default amount of columns to in the image page for the control panel</summary>

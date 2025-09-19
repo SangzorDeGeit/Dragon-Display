@@ -4,15 +4,15 @@ use super::config::{remove_campaign_from_config, write_campaign_to_config};
 use adw::prelude::*;
 use async_channel::Sender;
 use glib::clone;
-use gtk::glib;
 use gtk::glib::spawn_future_local;
+use gtk::glib::{self};
 
+use crate::program_manager::dragon_display;
 use crate::{config, program_manager::refresh};
 use crate::{
     config::{Campaign, SynchronizationOption},
     errors::GoogleDriveError,
 };
-use crate::{errors::ConfigError, program_manager::dragon_display};
 
 use crate::ui::add_campaign::AddCampaignWindow;
 use crate::ui::error_dialog::ErrorDialog;
@@ -23,14 +23,6 @@ use crate::ui::remove_campaign::RemoveCampaignWindow;
 use crate::ui::remove_confirm::RemoveConfirmWindow;
 use crate::ui::select_campaign::SelectCampaignWindow;
 use crate::ui::select_monitor::SelectMonitorWindow;
-
-/// The messages that the select_campaign_window can send
-pub enum SelectMessage {
-    Campaign { campaign: Campaign },
-    Remove,
-    Add,
-    Error { error: anyhow::Error, fatal: bool },
-}
 
 /// The messages that the add and remove campaign window can send
 pub enum AddRemoveMessage {
@@ -50,8 +42,6 @@ pub enum CallingFunction {
 
 /// Make and present the window to select a campaign
 pub fn select_campaign(app: &adw::Application) {
-    // This channel lets the frontend(ui) communicate with the manager
-    let (sender, receiver) = async_channel::bounded(1);
     let campaign_list = match config::read_campaign_from_config() {
         Ok(l) => l,
         Err(error) => {
@@ -59,38 +49,40 @@ pub fn select_campaign(app: &adw::Application) {
             return;
         }
     };
-    let window = SelectCampaignWindow::new(app, Some(sender), campaign_list);
-    window.present();
+    let window = SelectCampaignWindow::new(app, campaign_list.clone());
 
-    // We have to await messages from the channel without blocking the main event loop
-    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
-        while let Ok(message) = receiver.recv().await {
-            match message {
-                SelectMessage::Campaign { campaign } => {
-                    window.destroy();
+    window.connect_remove_campaign(clone!(@weak window, @weak app => move |_| {
+        window.destroy();
+        remove_campaign(&app);
+    }));
+
+    window.connect_add_campaign(clone!(@weak window, @weak app => move |_| {
+        window.destroy();
+        add_campaign(&app);
+    }));
+
+    window.connect_campaign(
+        clone!(@weak window, @weak app, @strong campaign_list => move |_, index| {
+            window.destroy();
+            let index = index as usize;
+            let campaign = campaign_list.get(index).expect("Expected index to be within list");
+            match fs::create_dir_all(&campaign.path) {
+                Ok(_) => {
                     match campaign.sync_option {
-                        SynchronizationOption::None => select_monitor(&app, campaign),
-                        SynchronizationOption::GoogleDrive { .. } => googledrive_synchronize(&app, campaign),
+                        SynchronizationOption::None => select_monitor(&app, campaign.clone()),
+                        SynchronizationOption::GoogleDrive { .. } => googledrive_synchronize(&app, campaign.clone()),
                     }
                 }
-                SelectMessage::Remove => {
-                    window.destroy();
-                    remove_campaign(&app);
-                },
-                SelectMessage::Add => {
-                    window.destroy();
-                    add_campaign(&app);
-                },
-                SelectMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
+                Err(_) => ErrorDialog::new(&app, ConfigError::FolderCreationError.into(), true).present()
             }
-        }
-    }));
+        }),
+    );
+
+    window.present();
 }
 
 /// Make and present the window to remove a campaign
 fn remove_campaign(app: &adw::Application) {
-    // This channel lets the frontend(ui) communicate with the manager
-    let (sender, receiver) = async_channel::bounded(1);
     let campaign_list = match config::read_campaign_from_config() {
         Ok(l) => l,
         Err(error) => {
@@ -98,25 +90,24 @@ fn remove_campaign(app: &adw::Application) {
             return;
         }
     };
-    let window = RemoveCampaignWindow::new(app, Some(sender), campaign_list);
-    window.present();
 
-    // We have to await messages from the channel without blocking the main event loop
-    glib::spawn_future_local(clone!( @weak window, @weak app => async move {
-        while let Ok(message) = receiver.recv().await {
-            match message {
-                AddRemoveMessage::Campaign { campaign } => {
-                    window.destroy();
-                    remove_confirm(&app, campaign);
-                }
-                AddRemoveMessage::Cancel => {
-                    window.destroy();
-                    select_campaign(&app);
-                },
-                AddRemoveMessage::Error { error, fatal } => ErrorDialog::new(&app, error, fatal).present(),
-            }
-        }
+    let window = RemoveCampaignWindow::new(app, campaign_list.clone());
+
+    window.connect_remove(
+        clone!(@weak window, @weak app, @strong campaign_list => move |_, index| {
+            window.destroy();
+            let index = index as usize;
+            let campaign = campaign_list.get(index).expect("Expected index to be within list");
+            remove_confirm(&app, campaign.clone());
+        }),
+    );
+
+    window.connect_cancel(clone!(@weak window, @weak app => move |_| {
+        window.destroy();
+        select_campaign(&app);
     }));
+
+    window.present();
 }
 
 fn remove_confirm(app: &adw::Application, campaign: Campaign) {

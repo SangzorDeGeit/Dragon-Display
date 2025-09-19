@@ -1,5 +1,4 @@
 use gtk::glib::clone;
-use gtk::MediaFile;
 use gtk::{gdk_pixbuf::PixbufRotation, glib::timeout_future_seconds};
 use std::cell::Cell;
 use std::path::PathBuf;
