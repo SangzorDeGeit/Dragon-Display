@@ -5,8 +5,6 @@ use gtk::{
 };
 use gtk::{prelude::*, ListView};
 
-use crate::google_drive::FolderResult;
-
 use super::google_folder_object::GoogleFolderObject;
 
 mod imp {
@@ -78,14 +76,10 @@ glib::wrapper! {
 }
 
 impl DdGoogleFolderTree {
-    pub fn new(data: FolderResult) -> Self {
+    pub fn new(folders: Vec<GoogleFolderObject>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
-        Self::initialize(&object, data);
-        object
-    }
 
-    fn initialize(obj: &DdGoogleFolderTree, data: FolderResult) {
         // we create a liststore for our root model, this contains one element labelled My drive
         let root_folder = GoogleFolderObject::new("My Drive".to_string(), "root".to_string());
         let root_vec: Vec<GoogleFolderObject> = vec![root_folder];
@@ -103,23 +97,13 @@ impl DdGoogleFolderTree {
                 .expect("Found a non folder object when creating the google drive tree");
             let store = gio::ListStore::new::<GoogleFolderObject>();
             // Get all the children from the item that was clicked
-            let folder_id = folder_item.id();
-            let children = data
-                .id_child_map
-                .get(&folder_id)
-                .expect("Clicked folder id could not be found in the map");
-            // Make a folder object for each child and add them to a vector
-            let mut child_folder_vec = Vec::new();
-            for child_id in children {
-                let child_name = data
-                    .id_name_map
-                    .get(child_id)
-                    .expect("No name found for the child of clicked folder");
-                let child_folder =
-                    GoogleFolderObject::new(child_name.to_string(), child_id.to_string());
-                child_folder_vec.push(child_folder);
-            }
-            store.extend_from_slice(&child_folder_vec);
+            let children_ids = folder_item.children();
+            let child_folders: Vec<GoogleFolderObject> = folders
+                .iter()
+                .filter(|f| children_ids.contains(&f.id()))
+                .map(|f| f.clone())
+                .collect();
+            store.extend_from_slice(&child_folders);
             Some(store.upcast::<gio::ListModel>())
         });
 
@@ -142,7 +126,7 @@ impl DdGoogleFolderTree {
 
         // We want to set the Label of the widget and we want to connect the TreeExpander to the
         // TreeListRow
-        factory.connect_bind(clone!(@strong tree_model => move |_, list_item| {
+        factory.connect_bind(clone!(@weak tree_model => move |_, list_item| {
                 let listitem = list_item.downcast_ref::<ListItem>().expect("connect_bind in ListitemFactory: item needs to be a ListItem");
                 let folder_object = listitem
                     .item()
@@ -174,7 +158,7 @@ impl DdGoogleFolderTree {
         // Only allow one item to be selected
         let selection_model = SingleSelection::new(Some(tree_model));
 
-        selection_model.connect_selection_changed(clone!(@strong obj => move |model, _, _| {
+        selection_model.connect_selection_changed(clone!(@weak object => move |model, _, _| {
             let position = model.selected();
             let binding = model.item(position);
             let folder_object = binding.and_downcast_ref::<GoogleFolderObject>().expect(
@@ -182,7 +166,7 @@ impl DdGoogleFolderTree {
             );
             let folder_name = folder_object.name();
             let folder_id = folder_object.id();
-            obj.emit_by_name::<()>("folder-selection-changed", &[&folder_name, &folder_id]);
+            object.emit_by_name::<()>("folder-selection-changed", &[&folder_name, &folder_id]);
         }));
 
         let list_view = ListView::new(Some(selection_model), Some(factory));
@@ -192,6 +176,21 @@ impl DdGoogleFolderTree {
         list_view.set_halign(gtk::Align::Fill);
         list_view.set_single_click_activate(false);
 
-        obj.imp().window.set_child(Some(&list_view));
+        object.imp().window.set_child(Some(&list_view));
+        object
+    }
+
+    /// Signal emitted when the refresh button is pressed
+    pub fn connect_folder_selection_changed<F: Fn(&Self, String, String) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "folder-selection-changed",
+            true,
+            glib::closure_local!(|window, id, name| {
+                f(window, id, name);
+            }),
+        )
     }
 }

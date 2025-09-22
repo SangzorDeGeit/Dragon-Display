@@ -128,7 +128,7 @@ impl SelectCampaignWindow {
             let button = Button::builder().label(&campaign.name).build();
             imp.campaign_grid
                 .attach(&button, index % 4, index / 4, 1, 1);
-            let campaign = DdCampaign::new(campaign);
+            let campaign = DdCampaign::from(campaign);
             button.connect_clicked(
                 clone!(@weak object => move |_| object.emit_by_name::<()>("campaign", &[&campaign])),
             );

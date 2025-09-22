@@ -15,10 +15,11 @@
                 <property name="margin_end">6</property>
                 <property name="spacing">6</property>
                 <child>
-                    <object class="GtkLabel" id="message_label">
+                    <object class="GtkLabel">
                         <property name="halign">fill</property>
                         <property name="hexpand">true</property>
-                        <property name="label">Dragon Display is getting your google drive folder data</property>
+                        <property name="label">Select a folder where Dragon Display will download
+                            the images from. Current location:</property>
                     </object>
                 </child>
                 <child>
@@ -32,7 +33,7 @@
                     <object class="GtkPaned">
                         <property name="orientation">vertical</property>
                         <property name="start-child">
-                            <object class="GtkBox" id="load_select_widget">
+                            <object class="GtkBox" id="select_widget">
                                 <property name="halign">fill</property>
                                 <property name="valign">fill</property>
                                 <property name="hexpand">true</property>

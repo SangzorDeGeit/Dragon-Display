@@ -1,27 +1,19 @@
 use adw::Application;
-use async_channel::Sender;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
 use crate::campaign::DdCampaign;
-use crate::config::Campaign;
-use crate::setup_manager::AddRemoveMessage;
 
 mod imp {
-    use std::cell::RefCell;
     use std::sync::OnceLock;
 
-    use async_channel::Sender;
     use glib::subclass::InitializingObject;
     use gtk::glib::object::ObjectExt;
     use gtk::glib::subclass::Signal;
     use gtk::prelude::StaticTypeExt;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Label};
-
-    use crate::config::Campaign;
-    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -55,14 +47,12 @@ mod imp {
     impl RemoveConfirmWindow {
         #[template_callback]
         fn handle_yes(&self, _: Button) {
-            let obj = self.obj();
-            obj.emit_by_name::<()>("yes", &[]);
+            self.obj().emit_by_name::<()>("yes", &[]);
         }
 
         #[template_callback]
         fn handle_no(&self, _: Button) {
-            let obj = self.obj();
-            obj.emit_by_name::<()>("no", &[]);
+            self.obj().emit_by_name::<()>("no", &[]);
         }
     }
 
@@ -72,8 +62,8 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("yes").build(),
                     Signal::builder("no").build(),
+                    Signal::builder("yes").build(),
                 ]
             })
         }

@@ -1,22 +1,24 @@
-use gtk::prelude::*;
 use gtk::{glib, subclass::prelude::*};
 
 use crate::config::Campaign;
 
 use crate::config::SynchronizationOption;
-use crate::errors::DragonDisplayError;
+use crate::setup::Token;
 
 mod imp {
 
-    use std::cell::{OnceCell, RefCell};
+    use std::{
+        cell::{OnceCell, RefCell},
+        rc::Rc,
+    };
 
     use super::*;
 
     #[derive(Default)]
     pub struct DdCampaign {
-        pub name: OnceCell<String>,
-        pub path: OnceCell<String>,
-        pub sync_option: RefCell<SynchronizationOption>,
+        pub name: Rc<OnceCell<String>>,
+        pub path: Rc<OnceCell<String>>,
+        pub sync_option: Rc<RefCell<SynchronizationOption>>,
     }
 
     #[glib::object_subclass]
@@ -75,7 +77,7 @@ impl DdCampaign {
         self.imp().sync_option.borrow().clone()
     }
 
-    pub fn accesstokens(&self) -> Option<(String, String)> {
+    pub fn token(&self) -> Option<Token> {
         let borrowed = self.imp().sync_option.borrow();
         if let SynchronizationOption::GoogleDrive {
             access_token,
@@ -83,14 +85,18 @@ impl DdCampaign {
             ..
         } = &*borrowed
         {
-            return Some((access_token.clone(), refresh_token.clone()));
+            let token = Token {
+                access_token: access_token.clone(),
+                refresh_token: refresh_token.clone(),
+            };
+            return Some(token);
         }
         None
     }
 
     /// Sets the accesstoken and refreshtoken of the campaign if the campaign is a googledrive
     /// campaign, otherwise does nothing
-    pub fn set_accesstoken(&self, accesstoken: String, refreshtoken: String) {
+    pub fn set_token(&self, token: Token) {
         let mut borrowed = self.imp().sync_option.borrow_mut();
         if let SynchronizationOption::GoogleDrive {
             access_token,
@@ -98,8 +104,27 @@ impl DdCampaign {
             ..
         } = &mut *borrowed
         {
-            *access_token = accesstoken;
-            *refresh_token = refreshtoken;
+            *access_token = token.access_token;
+            *refresh_token = token.refresh_token;
         }
+    }
+
+    /// Sets the google target folder id of the campaign if the campaign is a googledrive
+    /// campaign, otherwise does nothing
+    pub fn set_google_folder(&self, id: String) {
+        let mut borrowed = self.imp().sync_option.borrow_mut();
+        if let SynchronizationOption::GoogleDrive {
+            google_drive_sync_folder,
+            ..
+        } = &mut *borrowed
+        {
+            *google_drive_sync_folder = id;
+        }
+    }
+}
+
+impl Default for DdCampaign {
+    fn default() -> Self {
+        glib::Object::new::<Self>()
     }
 }

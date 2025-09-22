@@ -1,8 +1,11 @@
 use std::{env, fs::OpenOptions, io::Read, sync::mpsc};
 
+use async_channel::Receiver;
+use async_channel::{Receiver, Sender};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use google_drive::Client;
-use gtk::glib::{self, object::ObjectExt, subclass::prelude::*};
+use gtk::glib::{self, object::ObjectExt, spawn_future_local, subclass::prelude::*};
+use gtk::glib::{clone, spawn_future};
 use rouille::{Response, Server};
 use snafu::{OptionExt, Report, ResultExt};
 
@@ -13,21 +16,30 @@ use crate::{
     },
     setup::Token,
     try_emit,
+    widgets::google_folder_object::GoogleFolderObject,
 };
 
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 
+pub enum GdClientEvent {
+    Url { url: String },
+    Error { msg: String, fatal: bool },
+}
+
 mod imp {
 
-    use std::sync::{mpsc::Sender, OnceLock};
+    use std::sync::OnceLock;
 
     use gtk::glib::{subclass::Signal, types::StaticType};
+
+    use crate::widgets::google_folder_object::GoogleFolderObject;
 
     use super::*;
 
     #[derive(Default)]
     pub struct DragonDisplayGDClient {
-        pub shutdown_sender: OnceLock<Sender<()>>,
+        pub shutdown_receiver: OnceLock<async_channel::Receiver<()>>,
+        pub event_sender: OnceLock<async_channel::Sender<GdClientEvent>>,
     }
 
     #[glib::object_subclass]
@@ -42,17 +54,22 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("url")
-                        .param_types([String::static_type()])
-                        .build(),
                     Signal::builder("accesstoken")
                         .param_types([String::static_type(), String::static_type()])
                         .build(),
                     Signal::builder("total-folders")
                         .param_types([u32::static_type()])
                         .build(),
+                    Signal::builder("children-folders")
+                        .param_types([GoogleFolderObject::static_type()])
+                        .param_types([u32::static_type()])
+                        .build(),
+                    Signal::builder("folder")
+                        .param_types([GoogleFolderObject::static_type()])
+                        .build(),
+                    Signal::builder("list-complete").build(),
                     Signal::builder("reconnect").build(),
-                    Signal::builder("refresh-total").build(),
+                    Signal::builder("refresh").build(),
                     Signal::builder("error")
                         .param_types([String::static_type(), bool::static_type()])
                         .build(),
@@ -68,8 +85,12 @@ glib::wrapper! {
 
 impl DragonDisplayGDClient {
     /// Create a new instance of the initialize client object
-    pub fn new() -> Self {
+    pub fn new(event_sender: Sender<GdClientEvent>) -> Self {
         let obj = glib::Object::new::<Self>();
+        obj.imp()
+            .event_sender
+            .set(event_sender)
+            .expect("Sender was already set");
         obj
     }
 
@@ -83,20 +104,28 @@ impl DragonDisplayGDClient {
 
     /// Connect to google drive. This function will block the main thread and must be called from a
     /// seperate runtime (using runtime().spawn())
-    pub async fn connect(&self) {
+    pub async fn connect(&self, shutdown_receiver: Receiver<()>) {
         try_emit!(self, Self::configure_environment(), true);
 
         let (tx, rx) = mpsc::channel();
         let (_, shutdown_sender) = try_emit!(self, self.start_server(tx), true);
-        self.imp()
-            .shutdown_sender
-            .set(shutdown_sender)
-            .expect("Expected oncelock to be empty");
+
+        // shutdown the server if a shutdown signal is received
+        spawn_future(
+            clone!(@strong self as obj, @strong shutdown_receiver, @strong shutdown_sender => async move {
+                while let Ok(_) = shutdown_receiver.recv().await {
+                    try_emit!(
+                        obj,
+                        shutdown_sender.send(()).context(SendMessageSnafu),
+                        false
+                    );
+                }
+            }),
+        );
 
         let mut google_drive_client = Client::new_from_env("", "").await;
         let user_consent_url = google_drive_client.user_consent_url(&[SCOPE.to_string()]);
 
-        self.emit_by_name::<()>("url", &[&user_consent_url]);
         try_emit!(
             self,
             open::that(&user_consent_url).context(IOSnafu {
@@ -104,6 +133,9 @@ impl DragonDisplayGDClient {
             }),
             false
         );
+        self.emit_event(GdClientEvent::Url {
+            url: user_consent_url,
+        });
 
         let state_and_code = try_emit!(
             self,
@@ -113,7 +145,11 @@ impl DragonDisplayGDClient {
             true
         );
 
-        try_emit!(self, self.shutdown_server(), true);
+        try_emit!(
+            self,
+            shutdown_sender.send(()).context(SendMessageSnafu),
+            false
+        );
 
         let access_token = try_emit!(
             self,
@@ -130,17 +166,6 @@ impl DragonDisplayGDClient {
             "accesstoken",
             &[&access_token.access_token, &access_token.refresh_token],
         );
-    }
-
-    /// Shutdown the server that listens for a google state and code, returns an error if no server
-    /// was open
-    pub fn shutdown_server(&self) -> Result<(), DragonDisplayError> {
-        let shutdown_sender = self.imp().shutdown_sender.get().context(OtherSnafu {
-            msg: "No server running".to_owned(),
-        })?;
-        shutdown_sender.send(()).context(SendMessageSnafu)?;
-
-        Ok(())
     }
 
     /// Starts a server that listens for the google state and code, for connecting with google drive
@@ -212,14 +237,54 @@ impl DragonDisplayGDClient {
                 "user", "", false, "", false, "name", &query, "", false, false, "",
             )
             .await;
-        match request {
-            Ok(r) => self.emit_by_name::<()>("total-folders", &[&(r.body.len() as u32)]),
-            Err(_) => self.emit_by_name::<()>("refresh-total", &[]),
+        let result = match request {
+            Ok(r) => r.body,
+            Err(_) => {
+                self.emit_by_name::<()>("refresh", &[]);
+                return;
+            }
+        };
+        let total = result.len();
+        for file in result {
+            let folder = GoogleFolderObject::new(file.id, file.name);
+            self.emit_by_name::<()>("folder", &[&folder]);
         }
+        self.emit_by_name::<()>("total-folders", &[&(total as u32)]);
     }
 
-    pub async fn list_folders(&self, token: Token) {
-        todo!("implement")
+    /// Update the children variable of each GoogleFolderObject in the given `folders` Vec.
+    pub async fn list_folders(&self, token: Token, mut folders: Vec<GoogleFolderObject>) {
+        try_emit!(self, Self::configure_environment(), true);
+        let google_drive_client =
+            Client::new_from_env(&token.access_token, &token.refresh_token).await;
+
+        while let Some(folder) = folders.pop() {
+            let query = format!(
+                "mimeType = 'application/vnd.google-apps.folder' and '{}' in parents and trashed = false",
+                folder.id()
+            );
+            let request = google_drive_client
+                .files()
+                .list_all(
+                    "user", "", false, "", false, "name", &query, "", false, false, "",
+                )
+                .await;
+
+            let result = match request {
+                Ok(r) => r.body,
+                Err(_) => {
+                    self.emit_by_name::<()>("refresh", &[]);
+                    return;
+                }
+            };
+
+            let children: Vec<String> = result.into_iter().map(|file| file.id).collect();
+            let amount = children.len();
+            folder.set_children(children);
+            self.emit_by_name::<()>("children-folders", &[&folder, &(amount as u32)]);
+        }
+
+        self.emit_by_name::<()>("list-complete", &[]);
     }
 
     /**
@@ -284,21 +349,34 @@ impl DragonDisplayGDClient {
      * ---------------------------------------------
      **/
 
+    /// Send a signal through the async_channel
+    pub fn emit_event(&self, event: GdClientEvent) {
+        self.imp()
+            .event_sender
+            .get()
+            .expect("Expected a sender")
+            .send_blocking(event)
+            .expect("Failed to send message");
+    }
+
     /// Emit an error message based on the input error
     pub fn emit_error(&self, err: DragonDisplayError, fatal: bool) {
         let msg = Report::from_error(err).to_string();
-        self.emit_by_name::<()>("error", &[&msg, &fatal]);
+        self.emit_event(GdClientEvent::Error { msg, fatal });
     }
 
-    /// Signal emitted when the url is send
-    pub fn connect_url<F: Fn(&Self, String) + 'static>(&self, f: F) -> glib::SignalHandlerId {
-        self.connect_closure(
-            "url",
-            true,
-            glib::closure_local!(|window, url| {
-                f(window, url);
-            }),
-        )
+    /// Connect to the sender sending a url signal
+    pub fn connect_url<F: Fn(String) + 'static>(
+        receiver: async_channel::Receiver<GdClientEvent>,
+        f: F,
+    ) {
+        spawn_future_local(async move {
+            while let Ok(event) = receiver.recv().await {
+                if let GdClientEvent::Url { url } = event {
+                    f(url);
+                }
+            }
+        });
     }
 
     /// Signal emitted when the accesstoken is send
@@ -328,9 +406,9 @@ impl DragonDisplayGDClient {
     }
 
     /// Signal emitted when the api call to the total folders fails
-    pub fn connect_refresh_total<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+    pub fn connect_refresh<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
         self.connect_closure(
-            "refresh-total",
+            "refresh",
             true,
             glib::closure_local!(|window| {
                 f(window);
@@ -349,6 +427,47 @@ impl DragonDisplayGDClient {
             true,
             glib::closure_local!(|window, amount| {
                 f(window, amount);
+            }),
+        )
+    }
+
+    /// Signal emitted when the children variable of a folder is updated, indicating how many
+    /// children where indexed
+    pub fn connect_children_folders<F: Fn(&Self, GoogleFolderObject, u32) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "children-folders",
+            true,
+            glib::closure_local!(|window, folder, amount| {
+                f(window, folder, amount);
+            }),
+        )
+    }
+
+    /// Signal emitted when the indexing of all the folders in the target google drive is complete
+    /// (When the list_folders function completes succesfully)
+    pub fn connect_list_complete<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "list-complete",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted for each google folder in the target google drive
+    pub fn connect_folder<F: Fn(&Self, GoogleFolderObject) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "folder",
+            false,
+            glib::closure_local!(|window, folder| {
+                f(window, folder);
             }),
         )
     }

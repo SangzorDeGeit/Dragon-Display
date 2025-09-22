@@ -1,7 +1,6 @@
 use crate::campaign::DdCampaign;
 // File containing functions that manage the config folder for campaign data
 use crate::errors::*;
-use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use snafu::{prelude::*, ResultExt};
 use std::env;
@@ -46,7 +45,7 @@ impl Campaign {
         }
     }
 
-    pub fn from(campaign: DdCampaign) -> Self {
+    pub fn from(campaign: &DdCampaign) -> Self {
         Self {
             name: campaign.name(),
             path: campaign.path(),
@@ -178,7 +177,7 @@ pub fn read_campaign_from_config() -> Result<Vec<Campaign>, DragonDisplayError> 
     Ok(config.campaigns)
 }
 
-/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
+/// Given a Campaign, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
 pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), DragonDisplayError> {
     let config_item = Config {
         campaigns: vec![campaign.clone()],
@@ -211,7 +210,7 @@ pub fn remove_campaign_from_config(
     let campaign_list = read_campaign_from_config()?;
 
     ensure!(
-        campaign_list.len() == 0,
+        campaign_list.len() > 0,
         OtherSnafu {
             msg: "Could not find the campaign to be removed".to_owned()
         }
@@ -302,14 +301,14 @@ fn remove_campaign_config() -> Result<(), DragonDisplayError> {
 /// Checks if there are no duplicate paths in the campaign folder
 fn check_integrity(config: &Config) -> Result<(), DragonDisplayError> {
     ensure!(
-        config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT),
+        config.campaigns.len() <= usize::from(MAX_CAMPAIGN_AMOUNT),
         OtherSnafu {msg: "Too many campaigns found in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application".to_owned()}
     );
 
     let mut path_names = Vec::new();
     for campaign in &config.campaigns {
         let path = &campaign.path;
-        ensure!(path_names.contains(&path), OtherSnafu {msg: "Found a duplicate in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application".to_owned()});
+        ensure!(!path_names.contains(&path), OtherSnafu {msg: "Found a duplicate in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application".to_owned()});
         path_names.push(path);
     }
 

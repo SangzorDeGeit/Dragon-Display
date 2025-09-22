@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 
+use gtk::glib::clone;
 //GUI crates
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -9,14 +10,11 @@ pub mod campaign;
 pub mod config;
 pub mod errors;
 pub mod gd_client;
-pub mod google_drive;
-pub mod program_manager;
 pub mod setup;
-pub mod setup_manager;
 pub mod ui;
 pub mod widgets;
 
-use setup_manager::select_campaign;
+use setup::DragonDisplaySetup;
 use tokio::runtime::Runtime;
 
 pub const APP_ID: &str = "com.github.SangzorDeGeit.Dragon-Display";
@@ -47,8 +45,19 @@ fn main() -> glib::ExitCode {
     gio::resources_register_include!("dragon_display.gresource")
         .expect("Failed to register resources");
     let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
+    let setup = DragonDisplaySetup::new();
+    app.connect_activate(clone!(@weak setup => move |app| {
+        setup.select_window(&app);
+    }));
 
-    app.connect_activate(select_campaign);
+    setup.connect_error(clone!(@weak app => move |_, msg, fatal| {
+        if fatal {
+            println!("fatal error: {}", msg);
+            app.quit();
+        } else {
+            println!("error: {}", msg)
+        }
+    }));
 
     app.run()
 }

@@ -4,8 +4,6 @@ use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::campaign::DdCampaign;
-
 pub enum InitializeMessage {
     UserConsentUrl { url: String },
     Token { token: AccessToken },
@@ -13,23 +11,13 @@ pub enum InitializeMessage {
 }
 
 mod imp {
-    use super::InitializeMessage;
-    use async_channel::Sender;
-    use gtk::glib::spawn_future_local;
     use gtk::glib::subclass::Signal;
-    use std::cell::RefCell;
     use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Label};
-
-    use crate::campaign::DdCampaign;
-    use crate::config::{Campaign, SynchronizationOption};
-    use crate::google_drive::initialize_client;
-    use crate::runtime;
-    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -39,8 +27,6 @@ mod imp {
         pub message_label: TemplateChild<Label>,
         #[template_child]
         pub link_label: TemplateChild<Label>,
-        pub campaign_sender: RefCell<Option<Sender<AddRemoveMessage>>>,
-        pub shutdown_sender: RefCell<Option<Sender<()>>>,
     }
 
     // The central trait for subclassing a GObject

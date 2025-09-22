@@ -1,6 +1,4 @@
-use async_channel::Receiver;
 use gtk::glib;
-use gtk::glib::spawn_future_local;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
 pub enum ProgressMessage {
@@ -26,7 +24,7 @@ mod imp {
         pub progress_bar: TemplateChild<ProgressBar>,
         pub current: Cell<usize>,
         pub total: Cell<usize>,
-        pub update_receiver: RefCell<Option<Receiver<ProgressMessage>>>,
+        pub operation: RefCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -73,12 +71,17 @@ glib::wrapper! {
 }
 
 impl DdProgressBar {
-    pub fn new() -> Self {
+    pub fn new(operation: String) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.imp().total.set(1);
         object.imp().current.set(0);
+        object.imp().operation.replace(operation);
         object
+    }
+
+    pub fn set_operation(&self, operation: String) {
+        self.imp().operation.replace(operation);
     }
 
     /// Update the total, will do nothing if the output is not at least 1 or the total current
@@ -90,7 +93,7 @@ impl DdProgressBar {
         }
         self.imp().total.set(total);
 
-        let text = format!("{}/{}", current, total);
+        let text = format!("{}: {}/{}", self.imp().operation.borrow(), current, total);
         let fraction = current as f64 / total as f64;
 
         self.imp().progress_bar.set_text(Some(&text));

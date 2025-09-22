@@ -9,10 +9,8 @@ use crate::campaign::DdCampaign;
 use crate::config::Campaign;
 
 mod imp {
-    use std::cell::RefCell;
     use std::sync::OnceLock;
 
-    use async_channel::Sender;
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
     use gtk::prelude::*;
@@ -20,8 +18,6 @@ mod imp {
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Grid};
 
     use crate::campaign::DdCampaign;
-    use crate::config::Campaign;
-    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -29,7 +25,6 @@ mod imp {
     pub struct RemoveCampaignWindow {
         #[template_child]
         pub campaign_grid: TemplateChild<Grid>,
-        pub sender: RefCell<Option<Sender<AddRemoveMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -110,7 +105,7 @@ impl RemoveCampaignWindow {
             imp.campaign_grid
                 .attach(&button, index % 4, index / 4, 1, 1);
 
-            let campaign = DdCampaign::new(campaign);
+            let campaign = DdCampaign::from(campaign);
             button.connect_clicked(
                 clone!(@weak object => move |_| object.emit_by_name::<()>("remove", &[&campaign])),
             );

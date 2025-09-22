@@ -26,7 +26,7 @@ mod imp {
     use snafu::{OptionExt, ResultExt};
 
     use crate::campaign::DdCampaign;
-    use crate::config::{Campaign, SynchronizationOption};
+    use crate::config::SynchronizationOption;
     use crate::errors::{IOSnafu, OtherSnafu};
     use crate::try_emit;
 
