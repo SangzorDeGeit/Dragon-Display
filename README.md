@@ -19,7 +19,7 @@ To get a client secret follow the following steps:
 13. Give it a name (like PC-<yourname>)  
 14. In the pop up window click 'Download JSON'
 15. Rename the downloaded file to 'client_secret.json'
-16. Edit the file: change the value of redirect_uris to: \["https://localhost:8000"\] (add ':8000' after localhost)  
+16. Edit the file: change the value of redirect_uris to: ["`https://localhost:8000`"] (add ':8000' after localhost)  
 17. Put the file in the directory from where you run the program  
 
 ## Setup folder in your drive
