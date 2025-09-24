@@ -28,7 +28,7 @@ glib::wrapper! {
 }
 
 impl GoogleFolderObject {
-    pub fn new(name: String, id: String) -> Self {
+    pub fn new(id: String, name: String) -> Self {
         let object = glib::Object::new::<Self>();
         object.imp().id.set(id).expect("Expected no id");
         object.imp().name.set(name).expect("Exptected no name");

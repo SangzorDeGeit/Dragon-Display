@@ -16,6 +16,7 @@ pub mod widgets;
 
 use setup::DragonDisplaySetup;
 use tokio::runtime::Runtime;
+use ui::error_dialog::ErrorDialog;
 
 pub const APP_ID: &str = "com.github.SangzorDeGeit.Dragon-Display";
 
@@ -46,17 +47,13 @@ fn main() -> glib::ExitCode {
         .expect("Failed to register resources");
     let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
     let setup = DragonDisplaySetup::new();
+
     app.connect_activate(clone!(@weak setup => move |app| {
         setup.select_window(&app);
     }));
 
     setup.connect_error(clone!(@weak app => move |_, msg, fatal| {
-        if fatal {
-            println!("fatal error: {}", msg);
-            app.quit();
-        } else {
-            println!("error: {}", msg)
-        }
+        ErrorDialog::new(&app, msg, fatal).present();
     }));
 
     app.run()

@@ -11,8 +11,8 @@ use crate::campaign::DdCampaign;
 use crate::config::{
     read_campaign_from_config, remove_campaign_from_config, write_campaign_to_config, Campaign,
 };
-use crate::errors::{DragonDisplayError, SendMessageSnafu};
-use crate::gd_client::DragonDisplayGDClient;
+use crate::errors::{DragonDisplayError, SendBackendSnafu};
+use crate::gd_client::{DragonDisplayGDClient, GdClientEvent};
 use crate::ui::add_campaign::AddCampaignWindow;
 use crate::ui::googledrive_connect::GoogledriveConnectWindow;
 use crate::ui::googledrive_select_folder::DdGoogleFolderSelectWindow;
@@ -236,40 +236,40 @@ impl DragonDisplaySetup {
         let (sender, receiver) = async_channel::unbounded();
         let (shutdown_sender, shutdown_receiver) = async_channel::bounded(1);
 
-        window.connect_connect(clone!(@strong sender => move |_| {
-            runtime().spawn(clone!(@strong sender => async move |_| {
-                let client = DragonDisplayGDClient::new(sender.clone());
-                client.connect(shutdown_receiver);
-            }));
-        }));
+        window.connect_connect(move |_| {
+            runtime().spawn(
+                clone!(@strong sender, @strong shutdown_receiver => async move {
+                    let client = DragonDisplayGDClient::new(sender.clone());
+                    client.connect(shutdown_receiver).await;
+                }),
+            );
+        });
 
         window.connect_cancel(
             clone!(@weak self as obj, @weak app, @strong shutdown_sender => move |window| {
                 window.destroy();
-                try_emit!(obj, shutdown_sender.send_blocking(()).context(SendMessageSnafu), false);
+                try_emit!(obj, shutdown_sender.send_blocking(()).context(SendBackendSnafu), false);
                 obj.select_window(&app);
             }),
         );
 
-        DragonDisplayGDClient::connect_url(
+        DragonDisplayGDClient::connect_event(
             receiver,
-            clone!(@weak window => move |url| {
-                window.update_url(&url);
+            clone!(@weak self as obj, @weak window, @weak app => move |event| match event {
+                GdClientEvent::Url { url } => {
+                    window.update_url(&url);
+                },
+                GdClientEvent::Accesstoken { token } => {
+                    window.destroy();
+                    obj.imp().campaign.borrow().set_token(token);
+                    obj.googledrive_loadfolders(&app);
+                },
+                GdClientEvent::Error { msg, fatal } => {
+                    obj.emit_by_name::<()>("error", &[&msg, &fatal]);
+                },
+                _ => panic!("Invalid state"),
             }),
         );
-
-        client.connect_accesstoken(
-            clone!(@weak self as obj, @weak window, @weak app => move |_, accesstoken, refreshtoken| {
-                window.destroy();
-                let token = Token {access_token: accesstoken, refresh_token: refreshtoken};
-                obj.imp().campaign.borrow().set_token(token);
-                obj.googledrive_loadfolders(&app);
-            }),
-        );
-
-        client.connect_error(clone!(@weak self as obj => move |_, msg, fatal| {
-            obj.emit_by_name::<()>("error", &[&msg, &fatal])
-        }));
 
         window.present();
     }
@@ -279,7 +279,6 @@ impl DragonDisplaySetup {
     pub fn googledrive_loadfolders(&self, app: &adw::Application) {
         let progbar = DdProgressBar::new("Indexing google drive folders: ".to_string());
         let window = Window::builder().application(app).child(&progbar).build();
-        let client = DragonDisplayGDClient::new();
         let token = Rc::new(RefCell::new(
             self.imp()
                 .campaign
@@ -288,11 +287,13 @@ impl DragonDisplaySetup {
                 .expect("Expected a token"),
         ));
         let new_folders: Rc<RefCell<Vec<GoogleFolderObject>>> = Rc::new(RefCell::new(Vec::new()));
+        let (sender, receiver) = async_channel::unbounded();
 
         let token_snapshot = token.borrow().clone();
         match &*self.imp().gd_client_state.borrow() {
             GdClientState::TotalFolders => {
-                runtime().spawn(clone!(@weak client => async move {
+                runtime().spawn(clone!(@strong sender => async move {
+                    let client = DragonDisplayGDClient::new(sender.clone());
                     client
                         .total_folders(token_snapshot)
                         .await;
@@ -301,67 +302,58 @@ impl DragonDisplaySetup {
             GdClientState::ListFolders { folders, .. } => {
                 progbar.update_total(folders.len());
                 let folders_snapshot = folders.clone();
-                runtime().spawn(clone!(@weak client => async move {
+                runtime().spawn(clone!(@strong sender => async move {
+                    let client = DragonDisplayGDClient::new(sender.clone());
                     client.list_folders(token_snapshot, folders_snapshot).await;
                 }));
             }
         }
 
-        // ---- handle total folders signals ----
-        client.connect_total_folders(
-            clone!(@weak self as obj, @weak progbar, @weak token, @strong client, @strong new_folders => move |_, amount| {
-                progbar.update_total(amount as usize);
-                let folders_snapshot = new_folders.borrow().clone();
-                let token_snapshot = token.borrow().clone();
-                obj.imp().gd_client_state.replace(GdClientState::ListFolders {folders: new_folders.take(), indexed_folders: Vec::new()});
-                runtime().spawn(clone!(@strong client => async move {
-                    client.list_folders(token_snapshot, folders_snapshot).await;
-                }));
-            }),
-        );
+        DragonDisplayGDClient::connect_event(
+            receiver,
+            clone!(@weak self as obj, @weak progbar, @strong new_folders, @strong token, @weak window, @weak app => move |event| {
+                match event {
+                    GdClientEvent::Totalfolders { total } => {
+                        progbar.update_total(total);
+                        let folder_snapshot = new_folders.borrow().clone();
+                        let token_snapshot = token.borrow().clone();
+                        obj.imp().gd_client_state.replace(GdClientState::ListFolders { folders: new_folders.take(), indexed_folders: Vec::new() });
+                        runtime().spawn(clone!(@strong sender => async move {
+                            DragonDisplayGDClient::new(sender.clone()).list_folders(token_snapshot, folder_snapshot).await;
+                        }));
+                    }
+                    GdClientEvent::Folder { folder } => {
+                        new_folders.borrow_mut().push(folder);
+                    }
+                    GdClientEvent::Childrenfolders { parent, children } => {
+                        progbar.update_progress(children);
+                        obj.imp().gd_client_state.borrow_mut().pop_folder();
+                        println!("children: {}, name: {}", parent.children().len(), parent.name());
+                        obj.imp().gd_client_state.borrow_mut().new_indexed(parent);
+                    }
+                    GdClientEvent::Listcomplete => {
+                        window.destroy();
+                        obj.googledrive_selectfolder(&app);
+                    }
+                    GdClientEvent::Refresh => {
+                        let token_snapshot = token.borrow().clone();
+                        runtime().spawn(clone!(@strong sender => async move {
+                            DragonDisplayGDClient::new(sender.clone()).refresh_client(token_snapshot).await;
+                        }));
+                    }
+                    GdClientEvent::Reconnect => {
+                        window.destroy();
+                        obj.googledrive_connect(&app, true);
+                    }
+                    GdClientEvent::Accesstoken { token: new_token } => {
+                        token.replace(new_token);
+                        window.destroy();
+                        obj.googledrive_loadfolders(&app);
+                    }
 
-        client.connect_folder(clone!(@strong new_folders => move |_, folder| {
-            new_folders.borrow_mut().push(folder);
-        }));
+                    _ => panic!("invalid state"),
+                }
 
-        // --- handle folder tree indexing signals ----
-        client.connect_children_folders(
-            clone!(@weak self as obj, @weak progbar => move |_, folder, amount| {
-                progbar.update_progress(amount as usize);
-                obj.imp().gd_client_state.borrow_mut().pop_folder();
-                obj.imp().gd_client_state.borrow_mut().new_indexed(folder);
-            }),
-        );
-
-        client.connect_list_complete(
-            clone!(@weak self as obj, @weak window, @weak app, => move |_| {
-                window.destroy();
-                obj.googledrive_selectfolder(&app);
-            }),
-        );
-
-        // ---- handle reconnection signals ----
-
-        client.connect_refresh(clone!(@strong token, @strong client => move |_| {
-            let token_snapshot = token.borrow().clone();
-            runtime().spawn(clone!(@strong client => async move {
-                client.refresh_client(token_snapshot).await;
-            }));
-        }));
-
-        client.connect_reconnect(
-            clone!(@weak self as obj, @weak window, @weak app => move |_| {
-                window.destroy();
-                obj.googledrive_connect(&app, true);
-            }),
-        );
-
-        client.connect_accesstoken(
-            clone!(@weak self as obj, @strong token, @weak window, @weak app => move |_, a, r| {
-                let new_token = Token { access_token: a, refresh_token: r };
-                token.replace(new_token);
-                window.destroy();
-                obj.googledrive_loadfolders(&app);
             }),
         );
 
@@ -405,6 +397,14 @@ impl DragonDisplaySetup {
 
         window.present();
     }
+
+    /**
+     * ----------------------------------
+     *
+     * Signal connect functions
+     *
+     * --------------------------------
+     **/
 
     /// Signal emitted when a monitor is selected, sends the selected campaign and monitor
     pub fn connect_finished<F: Fn(&Self, Monitor, DdCampaign) + 'static>(

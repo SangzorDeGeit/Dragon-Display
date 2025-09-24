@@ -18,6 +18,8 @@
                     <object class="GtkLabel" id="message_label">
                         <property name="halign">center</property>
                         <property name="hexpand">true</property>
+                        <property name="use-markup">true</property>
+                        <property name="wrap">true</property>
                     </object>
                 </child>
                 <child>

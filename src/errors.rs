@@ -14,7 +14,16 @@ pub enum DragonDisplayError {
         source: std::sync::mpsc::SendError<()>,
     },
     #[snafu(
-        display("There was a problem with the client secret, follow the instructions on the github page for more info"),
+        display("Failed to send message from backend to manager"),
+        visibility(pub)
+    )]
+    SendBackendError {
+        source: async_channel::SendError<()>,
+    },
+    #[snafu(
+        display(
+            "There was a problem with the client secret. Follow this <a href=\"https://github.com/SangzorDeGeit/Dragon-Display/blob/main/README.md#using-google-drive\">link</a> for more info, or read the instructions on the readme for 'Using Google Drive'"
+        ),
         visibility(pub)
     )]
     ClientSecretError { source: std::io::Error },

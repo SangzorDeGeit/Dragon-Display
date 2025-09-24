@@ -1,13 +1,10 @@
 use adw::Application;
-use gtk::prelude::ObjectExt;
+use gtk::prelude::{GtkWindowExt, ObjectExt};
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
-use snafu::Report;
-
-use crate::errors::DragonDisplayError;
 
 mod imp {
-    use std::cell::{Cell, RefCell};
+    use std::cell::OnceCell;
 
     use glib::subclass::InitializingObject;
     use gtk::prelude::*;
@@ -20,8 +17,8 @@ mod imp {
     pub struct ErrorDialog {
         #[template_child]
         pub message_label: TemplateChild<Label>,
-        pub error_msg: RefCell<String>,
-        pub fatal: Cell<bool>,
+        pub fatal: OnceCell<bool>,
+        pub app: OnceCell<adw::Application>,
     }
 
     // The central trait for subclassing a GObject
@@ -47,15 +44,11 @@ mod imp {
     #[template_callbacks]
     impl ErrorDialog {
         #[template_callback]
-        fn handle_ok(&self, button: Button) {
-            let binding = button.root().expect("No root found");
-            let window = binding
-                .downcast_ref::<gtk::Window>()
-                .expect("Root was not a window");
-            let app = self.obj().application().expect("No application found");
-            window.close();
-            if self.fatal.get() {
-                app.quit();
+        fn handle_ok(&self, _: Button) {
+            let fatal = self.fatal.get().expect("Expected fatal to be set");
+            self.obj().destroy();
+            if *fatal {
+                self.app.get().expect("Expected app to be set").quit();
             }
         }
     }
@@ -86,34 +79,26 @@ glib::wrapper! {
 }
 
 impl ErrorDialog {
-    pub fn new(app: &Application, error: DragonDisplayError, fatal: bool) -> Self {
+    /// Create a new modal error dialog
+    pub fn new(app: &Application, msg: String, fatal: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
-        object.set_property("application", app);
-        object.set_property("modal", true);
-        let imp = object.imp();
+        object.set_modal(fatal);
+        object
+            .imp()
+            .app
+            .set(app.clone())
+            .expect("Could not set app");
+        object.imp().fatal.set(fatal).expect("Could not set fatal");
 
-        let report = Report::from_error(error);
         let message: String;
         if fatal {
-            message = format!("A fatal error occured:\n {}", report.to_string());
+            message = format!("A fatal error occured:\n {}", msg);
         } else {
-            message = format!("{}", report.to_string());
+            message = format!("{}", msg);
         }
-        imp.message_label.set_label(&message);
+        object.imp().message_label.set_label(&message);
 
-        Self::initialize(&imp);
         object
-    }
-
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::ErrorDialog) {
-        let message: String;
-        if imp.fatal.get() {
-            message = format!("A fatal error occured:\n {}", imp.error_msg.borrow());
-        } else {
-            message = format!("{}", imp.error_msg.borrow());
-        }
-        imp.message_label.set_text(&message);
     }
 }
