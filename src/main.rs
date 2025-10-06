@@ -10,6 +10,7 @@ pub mod campaign;
 pub mod config;
 pub mod errors;
 pub mod gd_client;
+pub mod program;
 pub mod setup;
 pub mod ui;
 pub mod widgets;
@@ -46,6 +47,7 @@ fn main() -> glib::ExitCode {
     gio::resources_register_include!("dragon_display.gresource")
         .expect("Failed to register resources");
     let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
+
     let setup = DragonDisplaySetup::new();
 
     app.connect_activate(clone!(@weak setup => move |app| {

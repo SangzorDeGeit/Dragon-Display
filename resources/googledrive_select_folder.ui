@@ -54,7 +54,6 @@
                                         <signal name="clicked" handler="handle_refresh"
                                             swapped="true" />
                                         <property name="label">Refresh</property>
-                                        <property name="sensitive">false</property>
                                     </object>
                                 </child>
                                 <child>

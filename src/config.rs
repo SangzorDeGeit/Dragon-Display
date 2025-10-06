@@ -11,8 +11,9 @@ use std::{
 };
 use toml::to_string;
 
-pub const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
-pub const VIDEO_EXTENSIONS: [&str; 1] = ["mp4"];
+pub const IMAGE_EXTENSIONS: [&str; 3] = ["jpeg", "jpg", "png"];
+pub const VIDEO_EXTENSIONS: [&str; 2] = ["mp4", "webm"];
+pub const VTT_EXTENSIONS: [&str; 1] = ["uvtt"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH: u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 pub const SYNCHRONIZATION_OPTIONS: [&str; 2] = ["None", "Google Drive"];

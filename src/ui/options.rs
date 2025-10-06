@@ -1,18 +1,17 @@
 use adw::Application;
-use async_channel::Sender;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use gtk::{prelude::*, Adjustment};
 
 use crate::APP_ID;
 pub const MAX_COLUMN_ROW_AMOUNT: f64 = 20.0;
-pub const MIN_COLUMN_ROW_AMOUNT: f64 = 0.0;
+pub const MIN_COLUMN_ROW_AMOUNT: f64 = 1.0;
 
 mod imp {
-    use async_channel::Sender;
-    use std::cell::RefCell;
+    use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
+    use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Button, CompositeTemplate, SpinButton};
     use gtk::{prelude::*, template_callbacks};
@@ -27,7 +26,6 @@ mod imp {
         pub row: TemplateChild<SpinButton>,
         #[template_child]
         pub column: TemplateChild<SpinButton>,
-        pub sender: RefCell<Option<Sender<()>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -61,13 +59,7 @@ mod imp {
             settings
                 .set_int("imagegrid-column-amount", self.column.value() as i32)
                 .expect("Could not update column");
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(())
-                .expect("Channel closed");
-            self.obj().clone().close();
+            self.obj().emit_by_name::<()>("confirm", &[]);
         }
 
         #[template_callback]
@@ -79,6 +71,11 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for DdOptionsWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| vec![Signal::builder("confirm").build()])
+        }
+
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -103,7 +100,7 @@ glib::wrapper! {
 }
 
 impl DdOptionsWindow {
-    pub fn new(app: &Application, sender: Sender<()>) -> Self {
+    pub fn new(app: &Application) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
@@ -112,15 +109,39 @@ impl DdOptionsWindow {
             .set_range(MIN_COLUMN_ROW_AMOUNT, MAX_COLUMN_ROW_AMOUNT);
         imp.column
             .set_range(MIN_COLUMN_ROW_AMOUNT, MAX_COLUMN_ROW_AMOUNT);
-        imp.sender.replace(Some(sender));
         let settings = gtk::gio::Settings::new(APP_ID);
         let columns = settings.int("imagegrid-column-amount") as f64;
         let rows = settings.int("imagegrid-row-amount") as f64;
-        let row_adjustment = Adjustment::new(rows, 1.0, 20.0, 1.0, 10.0, 0.0);
-        let column_adjustment = Adjustment::new(columns, 1.0, 20.0, 1.0, 10.0, 0.0);
+        let row_adjustment = Adjustment::new(
+            rows,
+            MIN_COLUMN_ROW_AMOUNT,
+            MAX_COLUMN_ROW_AMOUNT,
+            1.0,
+            10.0,
+            0.0,
+        );
+        let column_adjustment = Adjustment::new(
+            columns,
+            MIN_COLUMN_ROW_AMOUNT,
+            MAX_COLUMN_ROW_AMOUNT,
+            1.0,
+            10.0,
+            0.0,
+        );
         imp.row.set_adjustment(&row_adjustment);
         imp.column.set_adjustment(&column_adjustment);
 
         object
+    }
+
+    /// Signal emitted when the confirm button is pressed
+    pub fn connect_confirm<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "confirm",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
     }
 }

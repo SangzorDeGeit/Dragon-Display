@@ -82,6 +82,18 @@ impl DdGoogleFolderTree {
 
         // we create a liststore for our root model, this contains one element labelled My drive
         let root_folder = GoogleFolderObject::new("My Drive".to_string(), "root".to_string());
+
+        // any folder that is not a child of any other folder is a child of root
+        let mut registered_children: Vec<String> = Vec::new();
+        for folder in &folders {
+            registered_children.append(&mut folder.children());
+        }
+        let root_children: Vec<String> = folders
+            .iter()
+            .filter(|f| !registered_children.contains(&f.id()))
+            .map(|f| f.id())
+            .collect();
+        root_folder.set_children(root_children);
         let root_vec: Vec<GoogleFolderObject> = vec![root_folder];
         let root_store = gio::ListStore::new::<GoogleFolderObject>();
 
@@ -166,7 +178,7 @@ impl DdGoogleFolderTree {
             );
             let folder_name = folder_object.name();
             let folder_id = folder_object.id();
-            object.emit_by_name::<()>("folder-selection-changed", &[&folder_name, &folder_id]);
+            object.emit_by_name::<()>("folder-selection-changed", &[&folder_id, &folder_name]);
         }));
 
         let list_view = ListView::new(Some(selection_model), Some(factory));

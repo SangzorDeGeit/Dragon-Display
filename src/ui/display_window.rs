@@ -1,33 +1,59 @@
-use adw::Application;
-use async_channel::Receiver;
-use gdk4::Texture;
-use glib::spawn_future_local;
-use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
-use gtk::gio::File;
+use gdk4::builders::RGBABuilder;
+use gdk4::{Paintable, Texture, RGBA};
+use gtk::graphene::{Point, Rect, Size};
+use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib, MediaFile, Picture};
-use gtk::{prelude::*, Widget};
+use snafu::{OptionExt, Report};
 
-use crate::program_manager::DisplayWindowMessage;
+use crate::errors::{DragonDisplayError, OtherSnafu};
+use crate::try_emit;
+pub enum Rotation {
+    None,
+    Clockwise,
+    UpsideDown,
+    Counterclockwise,
+}
+
+impl Rotation {
+    fn get_angle_degree(&self) -> i32 {
+        match self {
+            Rotation::None => 0,
+            Rotation::Clockwise => 90,
+            Rotation::UpsideDown => 180,
+            Rotation::Counterclockwise => 270,
+        }
+    }
+}
+
+impl Default for Rotation {
+    fn default() -> Self {
+        Rotation::None
+    }
+}
 
 mod imp {
 
+    use crate::ui::display_window::Rotation;
     use std::cell::{Cell, RefCell};
+    use std::sync::OnceLock;
 
+    use gdk4::Texture;
     use glib::subclass::InitializingObject;
-    use gtk::prelude::*;
+    use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
     use gtk::{glib, Box, Button, CompositeTemplate};
+    use gtk::{prelude::*, Picture};
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/dragon/display/display_window.ui")]
     pub struct DdDisplayWindow {
         #[template_child]
-        pub content: TemplateChild<Box>,
+        pub content: TemplateChild<Picture>,
         pub fit: Cell<bool>,
-        pub current_content: RefCell<String>,
-        pub current_rotation: Cell<u32>,
+        pub rotation: RefCell<Rotation>,
+        pub texture: RefCell<Option<Texture>>,
     }
 
     // The central trait for subclassing a GObject
@@ -51,6 +77,15 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for DdDisplayWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![Signal::builder("error")
+                    .param_types([String::static_type(), bool::static_type()])
+                    .build()]
+            })
+        }
+
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -75,122 +110,157 @@ glib::wrapper! {
 }
 
 impl DdDisplayWindow {
-    pub fn new(app: &Application, receiver: Receiver<DisplayWindowMessage>) -> Self {
-        // set all properties
+    pub fn new() -> Self {
         let object = glib::Object::new::<Self>();
-        object.set_property("application", app);
-        let imp = object.imp();
-        Self::await_updates(imp, receiver);
-
         object
     }
 
-    fn await_updates(imp: &imp::DdDisplayWindow, receiver: Receiver<DisplayWindowMessage>) {
-        let content = imp.content.clone();
-        let fit = imp.fit.clone();
-        let current_content = imp.current_content.clone();
-        let current_rotation = imp.current_rotation.clone();
-        let media_file = MediaFile::new();
-        current_rotation.set(0);
-        spawn_future_local(async move {
-            while let Ok(message) = receiver.recv().await {
-                let child = match content.first_child() {
-                    Some(child) => {
-                        content.remove(&child);
-                        child
-                    }
-                    None => Widget::from(Picture::new()),
-                };
-                match message {
-                    DisplayWindowMessage::Image { picture_path } => {
-                        current_content.replace(picture_path.clone());
-                        let image = match child.downcast_ref::<Picture>() {
-                            Some(image) => {
-                                image.set_filename(Some(&picture_path));
-                                image
-                            }
-                            None => {
-                                let file = File::for_path(picture_path);
-                                &Picture::builder().file(&file).build()
-                            }
-                        };
-                        if fit.get() {
-                            image.set_content_fit(gtk::ContentFit::Fill);
-                        }
-                        content.append(image);
-                    }
-                    DisplayWindowMessage::Fit { fit: f } => {
-                        fit.set(f);
-                        let child = match child.downcast_ref::<Picture>() {
-                            Some(child) => child,
-                            None => continue,
-                        };
-
-                        if f {
-                            child.set_content_fit(gtk::ContentFit::Fill);
-                        } else {
-                            child.set_content_fit(gtk::ContentFit::Contain);
-                        }
-                        content.append(child);
-                    }
-                    DisplayWindowMessage::Rotate { rotation } => {
-                        let child = match child.downcast_ref::<Picture>() {
-                            Some(child) => child,
-                            None => continue,
-                        };
-                        let pixbuf = match Pixbuf::from_file(current_content.borrow().clone()) {
-                            Ok(p) => p,
-                            Err(_) => continue,
-                        };
-                        let mut new_rotation = current_rotation.get();
-                        new_rotation = match rotation {
-                            PixbufRotation::None => new_rotation,
-                            PixbufRotation::Counterclockwise => (new_rotation + 270) % 360,
-                            PixbufRotation::Upsidedown => (new_rotation + 180) % 360,
-                            PixbufRotation::Clockwise => (new_rotation + 90) % 360,
-                            _ => new_rotation,
-                        };
-                        match new_rotation {
-                            0 => pixbuf
-                                .rotate_simple(PixbufRotation::None)
-                                .expect("failed to rotate"),
-                            90 => pixbuf
-                                .rotate_simple(PixbufRotation::Clockwise)
-                                .expect("failed to rotate"),
-                            180 => pixbuf
-                                .rotate_simple(PixbufRotation::Upsidedown)
-                                .expect("failed to rotate"),
-                            270 => pixbuf
-                                .rotate_simple(PixbufRotation::Counterclockwise)
-                                .expect("failed to rotate"),
-                            _ => panic!("Invalid rotation"),
-                        };
-                        current_rotation.set(new_rotation);
-                        let texture = Texture::for_pixbuf(&pixbuf);
-                        child.set_paintable(Some(&texture));
-                        content.append(child);
-                    }
-                    DisplayWindowMessage::Video { video_path } => {
-                        let current_path = video_path
-                            .to_str()
-                            .expect("Could not obtain path")
-                            .to_string();
-                        current_content.replace(current_path);
-                        let file = File::for_path(video_path);
-                        media_file.set_file(Some(&file));
-                        let video = match child.downcast_ref::<Picture>() {
-                            Some(image) => {
-                                image.set_paintable(Some(&media_file));
-                                image
-                            }
-                            None => &Picture::builder().paintable(&media_file).build(),
-                        };
-                        media_file.play();
-                        media_file.set_loop(true);
-                        content.append(video);
-                    }
-                }
-            }
+    pub fn rotate_90(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::Clockwise,
+            Rotation::Clockwise => Rotation::UpsideDown,
+            Rotation::UpsideDown => Rotation::Counterclockwise,
+            Rotation::Counterclockwise => Rotation::None,
         });
+        self.apply_rotation();
+    }
+
+    pub fn rotate_180(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::UpsideDown,
+            Rotation::Clockwise => Rotation::Counterclockwise,
+            Rotation::UpsideDown => Rotation::None,
+            Rotation::Counterclockwise => Rotation::Clockwise,
+        });
+        self.apply_rotation();
+    }
+
+    pub fn rotate_270(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::Counterclockwise,
+            Rotation::Clockwise => Rotation::None,
+            Rotation::UpsideDown => Rotation::Clockwise,
+            Rotation::Counterclockwise => Rotation::UpsideDown,
+        });
+        self.apply_rotation();
+    }
+
+    /// Set the content of the display window to an image
+    pub fn set_image(&self, path_to_image: String) {
+        self.disconnect_media();
+        let texture = try_emit!(
+            self,
+            Texture::from_filename(&path_to_image)
+                .ok()
+                .context(OtherSnafu {
+                    msg: format!("Could not load image at {}", &path_to_image)
+                }),
+            false
+        );
+        self.imp().texture.replace(Some(texture));
+
+        // set the fit
+        if self.imp().fit.get() {
+            self.imp().content.set_content_fit(gtk::ContentFit::Fill);
+        } else {
+            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
+        }
+
+        // apply rotation
+        self.apply_rotation();
+    }
+
+    /// Set the content of the display window to a video
+    pub fn set_video(&self, path_to_video: String) {
+        self.disconnect_media();
+        self.imp().texture.replace(None);
+        let media_file = MediaFile::for_filename(&path_to_video);
+        media_file.play();
+        media_file.set_loop(true);
+        media_file.set_muted(true);
+        self.imp().content.set_paintable(Some(&media_file));
+    }
+
+    /// Toggle the content fit of the image, if there is no picture it will update the value but
+    /// silently fail to update the picture
+    pub fn toggle_fit(&self) {
+        if self.imp().fit.get() {
+            self.imp().fit.replace(false);
+        } else {
+            self.imp().fit.replace(true);
+        }
+        if self.imp().fit.get() {
+            self.imp().content.set_content_fit(gtk::ContentFit::Fill);
+        } else {
+            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
+        }
+    }
+
+    /// Applies a rotation to the currently stored texture and updates the current picture that is
+    /// presented with the rotation
+    fn apply_rotation(&self) {
+        let binding = &*self.imp().texture.borrow();
+        let texture = match binding {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+
+        let angle_degree = self.imp().rotation.borrow().get_angle_degree();
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        let (new_width, new_height) = match angle_degree {
+            90 | 270 => (height, width),
+            _ => (width, height),
+        };
+
+        let black = RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build();
+        let snapshot = gtk::Snapshot::new();
+        snapshot.save();
+        snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
+        snapshot.rotate(angle_degree as f32);
+        snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
+        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
+        snapshot.append_color(&black, &Rect::new(0.0, 1.0, width, 1.1));
+        snapshot.restore();
+        let rotated_texture = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
+            Some(t) => t,
+            None => {
+                println!("Could not create texture");
+                return;
+            }
+        };
+        self.imp().content.set_paintable(Some(&rotated_texture));
+    }
+
+    fn disconnect_media(&self) {
+        let paintable = match self.imp().content.paintable() {
+            Some(p) => p,
+            None => return,
+        };
+        if let Some(video) = paintable.downcast_ref::<MediaFile>() {
+            video.clear();
+        }
+    }
+
+    /// Emit an error message based on the input error
+    pub fn emit_error(&self, err: DragonDisplayError, fatal: bool) {
+        let msg = Report::from_error(err).to_string();
+        self.emit_by_name::<()>("error", &[&msg, &fatal]);
+    }
+
+    /// Signal emitted when an error occurs
+    pub fn connect_error<F: Fn(&Self, String, bool) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "error",
+            true,
+            glib::closure_local!(|window, msg, fatal| {
+                f(window, msg, fatal);
+            }),
+        )
     }
 }

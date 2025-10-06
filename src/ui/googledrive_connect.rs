@@ -1,14 +1,7 @@
 use adw::Application;
-use google_drive::AccessToken;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
-
-pub enum InitializeMessage {
-    UserConsentUrl { url: String },
-    Token { token: AccessToken },
-    Error { error: anyhow::Error },
-}
 
 mod imp {
     use gtk::glib::subclass::Signal;

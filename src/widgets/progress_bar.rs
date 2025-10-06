@@ -1,16 +1,9 @@
 use gtk::glib;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
-pub enum ProgressMessage {
-    Total { amount: usize },
-    Current { amount: usize },
-}
-
 mod imp {
-    use super::ProgressMessage;
     use std::cell::{Cell, RefCell};
 
-    use async_channel::Receiver;
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
     use gtk::{glib, CompositeTemplate};
@@ -110,7 +103,12 @@ impl DdProgressBar {
         }
         self.imp().current.set(current);
 
-        let text = format!("{}/{}", current, self.imp().total.get());
+        let text = format!(
+            "{}: {}/{}",
+            self.imp().operation.borrow(),
+            current,
+            self.imp().total.get()
+        );
         let fraction = self.imp().current.get() as f64 / self.imp().total.get() as f64;
 
         self.imp().progress_bar.set_text(Some(&text));
