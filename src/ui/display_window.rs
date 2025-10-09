@@ -1,9 +1,9 @@
 use gdk4::builders::RGBABuilder;
-use gdk4::{Paintable, Texture, RGBA};
+use gdk4::{Monitor, Snapshot, Texture};
 use gtk::graphene::{Point, Rect, Size};
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use gtk::{gio, glib, MediaFile, Picture};
+use gtk::{gio, glib, MediaFile};
 use snafu::{OptionExt, Report};
 
 use crate::errors::{DragonDisplayError, OtherSnafu};
@@ -35,14 +35,14 @@ impl Default for Rotation {
 mod imp {
 
     use crate::ui::display_window::Rotation;
-    use std::cell::{Cell, RefCell};
+    use std::cell::{Cell, OnceCell, RefCell};
     use std::sync::OnceLock;
 
-    use gdk4::Texture;
+    use gdk4::{Monitor, Texture};
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, Box, Button, CompositeTemplate};
+    use gtk::{glib, Button, CompositeTemplate, MediaFile};
     use gtk::{prelude::*, Picture};
 
     // Object holding the state
@@ -52,8 +52,11 @@ mod imp {
         #[template_child]
         pub content: TemplateChild<Picture>,
         pub fit: Cell<bool>,
+        pub grid: Cell<bool>,
         pub rotation: RefCell<Rotation>,
         pub texture: RefCell<Option<Texture>>,
+        pub media_file: OnceCell<MediaFile>,
+        pub monitor: OnceCell<Monitor>,
     }
 
     // The central trait for subclassing a GObject
@@ -110,8 +113,18 @@ glib::wrapper! {
 }
 
 impl DdDisplayWindow {
-    pub fn new() -> Self {
+    pub fn new(monitor: &Monitor) -> Self {
         let object = glib::Object::new::<Self>();
+        object
+            .imp()
+            .media_file
+            .set(MediaFile::new())
+            .expect("Expected media file to not be set");
+        object
+            .imp()
+            .monitor
+            .set(monitor.to_owned())
+            .expect("Expected monitor to not be set");
         object
     }
 
@@ -174,11 +187,16 @@ impl DdDisplayWindow {
     pub fn set_video(&self, path_to_video: String) {
         self.disconnect_media();
         self.imp().texture.replace(None);
-        let media_file = MediaFile::for_filename(&path_to_video);
+        let media_file = self
+            .imp()
+            .media_file
+            .get()
+            .expect("Expected media file to be set");
+        media_file.set_filename(Some(&path_to_video));
         media_file.play();
         media_file.set_loop(true);
         media_file.set_muted(true);
-        self.imp().content.set_paintable(Some(&media_file));
+        self.imp().content.set_paintable(Some(media_file));
     }
 
     /// Toggle the content fit of the image, if there is no picture it will update the value but
@@ -194,6 +212,24 @@ impl DdDisplayWindow {
         } else {
             self.imp().content.set_content_fit(gtk::ContentFit::Contain);
         }
+    }
+
+    pub fn toggle_grid(&self) {
+        let binding = &*self.imp().texture.borrow();
+        let texture = match binding {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+        let monitor = self.imp().monitor.get().expect("Monitor should be set");
+        let real_width = monitor.width_mm();
+        let real_height = monitor.height_mm();
+        // TODO: dynamic grid color
+
+        let black = RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build();
+        let snapshot = gtk::Snapshot::new();
+        snapshot.save();
     }
 
     /// Applies a rotation to the currently stored texture and updates the current picture that is
@@ -215,14 +251,12 @@ impl DdDisplayWindow {
             _ => (width, height),
         };
 
-        let black = RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build();
         let snapshot = gtk::Snapshot::new();
         snapshot.save();
         snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
         snapshot.rotate(angle_degree as f32);
         snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
         snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
-        snapshot.append_color(&black, &Rect::new(0.0, 1.0, width, 1.1));
         snapshot.restore();
         let rotated_texture = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
             Some(t) => t,
@@ -234,13 +268,13 @@ impl DdDisplayWindow {
         self.imp().content.set_paintable(Some(&rotated_texture));
     }
 
+    /// Clear the media file and keep it alive to make sure it is cleared
     fn disconnect_media(&self) {
-        let paintable = match self.imp().content.paintable() {
-            Some(p) => p,
-            None => return,
-        };
-        if let Some(video) = paintable.downcast_ref::<MediaFile>() {
-            video.clear();
+        if let Some(media) = self.imp().media_file.get() {
+            media.set_playing(false);
+            media.set_loop(false);
+            media.set_filename(None::<String>);
+            media.clear();
         }
     }
 

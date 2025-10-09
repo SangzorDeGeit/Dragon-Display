@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::APP_ID;
-use gdk4::Surface;
 use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{glib, Grid};

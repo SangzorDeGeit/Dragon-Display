@@ -1,8 +1,7 @@
-use gdk4::{Display, Surface, Texture};
+use gdk4::Texture;
 use gtk::{
     gio::File,
     glib::{self, clone, spawn_future_local, timeout_future_seconds},
-    graphene::{Rect, Size},
     subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
     MediaFile,
 };
@@ -144,9 +143,11 @@ impl DdThumbnail {
                 timeout_future_seconds(1).await;
             }
             let image = file.current_image();
-            file.clear();
+            file.set_filename(None::<&String>);
             obj.imp().icon.set_paintable(Some(&image));
-            timeout_future_seconds(1).await;
+            while file.is_playing() || file.has_video() {
+                timeout_future_seconds(1).await;
+            }
         }));
     }
 }

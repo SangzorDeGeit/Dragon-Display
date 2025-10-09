@@ -11,7 +11,6 @@
         <file compressed="true" preprocess="xml-stripblanks">googledrive_select_folder.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">progress_bar.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">folder_tree.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">googledrive_synchronize.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">select_monitor.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">control_window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">image_page.ui</file>

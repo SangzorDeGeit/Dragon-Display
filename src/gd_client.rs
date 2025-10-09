@@ -288,6 +288,11 @@ impl DragonDisplayGDClient {
             });
         }
         self.emit_event(GdClientEvent::Finished);
+        self.imp()
+            .event_sender
+            .get()
+            .expect("Expected a sender")
+            .close();
     }
 
     /**

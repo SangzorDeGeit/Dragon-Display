@@ -56,7 +56,7 @@ impl DragonDisplayProgram {
 
     pub fn run(&self, app: &adw::Application, monitor: &Monitor, campaign: String) {
         let control_window = try_emit!(self, DdControlWindow::new(app, campaign), true);
-        let display_window = DdDisplayWindow::new();
+        let display_window = DdDisplayWindow::new(monitor);
         control_window.present();
         display_window.present();
         display_window.fullscreen_on_monitor(monitor);

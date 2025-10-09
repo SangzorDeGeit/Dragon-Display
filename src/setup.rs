@@ -413,8 +413,7 @@ impl DragonDisplaySetup {
         window.present();
     }
 
-    /// Synchronize a googledrive campaign, the setup variable indicates whether the synchronize is
-    /// part of the setup process or a refresh called while the program is active
+    /// Synchronize a googledrive campaign
     pub fn googledrive_synchronize(&self, app: &adw::Application) {
         let progbar = DdProgressBar::new("Synchronizing files with google drive".to_string());
         let window = Window::builder().application(app).child(&progbar).build();
@@ -550,8 +549,12 @@ impl DragonDisplaySetup {
         );
         self.imp().setup.set(false);
 
-        dragon_display.connect_refresh(clone!(@weak self as obj, @weak app => move |_| {
-            obj.googledrive_synchronize(&app);
+        dragon_display.connect_refresh(clone!(@weak self as obj, @weak app => move |program| {
+            let sync_option = obj.imp().campaign.borrow().sync_option();
+            match sync_option {
+                SynchronizationOption::None => program.update_grid(),
+                SynchronizationOption::GoogleDrive { .. } => obj.googledrive_synchronize(&app),
+            }
         }));
 
         self.imp()

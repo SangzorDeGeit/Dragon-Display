@@ -173,7 +173,13 @@ impl DdControlWindow {
             .set_stack(Some(&object.imp().stack));
         let (images, _vtts, videos) = object.seperate_media(campaign_path)?;
         if images.len() == 0 {
-            let label = Label::builder().label("You have no images").build();
+            let label = Label::builder()
+                .label("You have no images")
+                .vexpand(true)
+                .hexpand(true)
+                .valign(gtk::Align::Center)
+                .halign(gtk::Align::Center)
+                .build();
             object.imp().images.append(&label);
         } else {
             let image_grid = DdThumbnailGrid::new(images, &MediaType::Image);
@@ -185,7 +191,13 @@ impl DdControlWindow {
         // get all vtts from the folder
         // setup the vtt grid
         if videos.len() == 0 {
-            let label = Label::builder().label("You have no videos").build();
+            let label = Label::builder()
+                .label("You have no videos")
+                .vexpand(true)
+                .hexpand(true)
+                .valign(gtk::Align::Center)
+                .halign(gtk::Align::Center)
+                .build();
             object.imp().videos.append(&label);
         } else {
             let video_grid = DdThumbnailGrid::new(videos, &MediaType::Video);

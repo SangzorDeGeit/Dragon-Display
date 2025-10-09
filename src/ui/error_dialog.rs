@@ -1,5 +1,5 @@
 use adw::Application;
-use gtk::prelude::{GtkWindowExt, ObjectExt};
+use gtk::prelude::GtkWindowExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
