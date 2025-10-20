@@ -470,7 +470,7 @@ impl DragonDisplaySetup {
                                 .program
                                 .get()
                                 .expect("program should be set")
-                                .update_grid();
+                                .update_thumbnail_grid();
                         }
                     },
                     GdClientEvent::FailedFiles { files } => {
@@ -552,7 +552,7 @@ impl DragonDisplaySetup {
         dragon_display.connect_refresh(clone!(@weak self as obj, @weak app => move |program| {
             let sync_option = obj.imp().campaign.borrow().sync_option();
             match sync_option {
-                SynchronizationOption::None => program.update_grid(),
+                SynchronizationOption::None => program.update_thumbnail_grid(),
                 SynchronizationOption::GoogleDrive { .. } => obj.googledrive_synchronize(&app),
             }
         }));

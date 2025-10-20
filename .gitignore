@@ -3,4 +3,5 @@
 .config.toml
 client_secret.json
 /memory_test
+/test_gd
  

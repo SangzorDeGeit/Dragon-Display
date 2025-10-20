@@ -11,6 +11,14 @@
             <default>3</default>
             <summary>Default amount of rows to in the image page for the control panel</summary>
         </key>
+        <key name="grid-color-preset" type="i">
+            <default>0</default>
+            <summary>Color of the grid when toggle grid is activated</summary>
+        </key>
+        <key name="grid-line-width" type="d">
+            <default>0.5</default>
+            <summary>The width of the grid lines</summary>
+        </key>
     </schema>
 </schemalist>
 

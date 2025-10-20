@@ -1,5 +1,4 @@
-use gdk4::builders::RGBABuilder;
-use gdk4::{Monitor, Snapshot, Texture};
+use gdk4::{Monitor, Texture, RGBA};
 use gtk::graphene::{Point, Rect, Size};
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -7,7 +6,9 @@ use gtk::{gio, glib, MediaFile};
 use snafu::{OptionExt, Report};
 
 use crate::errors::{DragonDisplayError, OtherSnafu};
-use crate::try_emit;
+use crate::{try_emit, APP_ID};
+
+use super::options::ColorPreset;
 pub enum Rotation {
     None,
     Clockwise,
@@ -38,7 +39,7 @@ mod imp {
     use std::cell::{Cell, OnceCell, RefCell};
     use std::sync::OnceLock;
 
-    use gdk4::{Monitor, Texture};
+    use gdk4::{Monitor, Texture, RGBA};
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
@@ -57,6 +58,8 @@ mod imp {
         pub texture: RefCell<Option<Texture>>,
         pub media_file: OnceCell<MediaFile>,
         pub monitor: OnceCell<Monitor>,
+        pub color: RefCell<Option<RGBA>>,
+        pub gridline_width: Cell<f32>,
     }
 
     // The central trait for subclassing a GObject
@@ -125,9 +128,26 @@ impl DdDisplayWindow {
             .monitor
             .set(monitor.to_owned())
             .expect("Expected monitor to not be set");
+        let settings = gtk::gio::Settings::new(APP_ID);
+        let color_index = settings.int("grid-color-preset") as u32;
+        let color = ColorPreset::from_index(color_index).to_rgba();
+        object.imp().color.replace(Some(color));
+
+        let gridline_width = settings.double("grid-line-width") as f32;
+        object.imp().gridline_width.set(gridline_width);
+
         object
     }
 
+    /// Disconnect the media that the display is holding on to and set the content to nothing
+    pub fn reset(&self) {
+        self.disconnect_media();
+        self.imp().texture.replace(None);
+        self.imp().content.set_paintable(None::<&Texture>);
+    }
+
+    /// Tries to rotate the current texture by 90 degrees, if there is no current texture the
+    /// internal rotation value is still updated
     pub fn rotate_90(&self) {
         self.imp().rotation.replace_with(|rotation| match rotation {
             Rotation::None => Rotation::Clockwise,
@@ -135,9 +155,11 @@ impl DdDisplayWindow {
             Rotation::UpsideDown => Rotation::Counterclockwise,
             Rotation::Counterclockwise => Rotation::None,
         });
-        self.apply_rotation();
+        self.redraw();
     }
 
+    /// Tries to rotate the current texture by 180 degrees, if there is no current texture the
+    /// internal rotation value is still updated
     pub fn rotate_180(&self) {
         self.imp().rotation.replace_with(|rotation| match rotation {
             Rotation::None => Rotation::UpsideDown,
@@ -145,9 +167,11 @@ impl DdDisplayWindow {
             Rotation::UpsideDown => Rotation::None,
             Rotation::Counterclockwise => Rotation::Clockwise,
         });
-        self.apply_rotation();
+        self.redraw();
     }
 
+    /// Tries to rotate the current texture by 270 degrees, if there is no current texture the
+    /// internal rotation value is still updated
     pub fn rotate_270(&self) {
         self.imp().rotation.replace_with(|rotation| match rotation {
             Rotation::None => Rotation::Counterclockwise,
@@ -155,10 +179,10 @@ impl DdDisplayWindow {
             Rotation::UpsideDown => Rotation::Clockwise,
             Rotation::Counterclockwise => Rotation::UpsideDown,
         });
-        self.apply_rotation();
+        self.redraw();
     }
 
-    /// Set the content of the display window to an image
+    /// Update the texture of the display window and set it to an image that is at the given path
     pub fn set_image(&self, path_to_image: String) {
         self.disconnect_media();
         let texture = try_emit!(
@@ -179,8 +203,7 @@ impl DdDisplayWindow {
             self.imp().content.set_content_fit(gtk::ContentFit::Contain);
         }
 
-        // apply rotation
-        self.apply_rotation();
+        self.redraw();
     }
 
     /// Set the content of the display window to a video
@@ -211,73 +234,95 @@ impl DdDisplayWindow {
         }
     }
 
+    /// Toggle a grid over the current texture, if there is no active texture it will update the
+    /// value but silently fail to update the content.
     pub fn toggle_grid(&self) {
         if self.imp().grid.get() {
             self.imp().grid.replace(false);
-            self.apply_rotation();
         } else {
             self.imp().grid.replace(true);
-            self.apply_grid();
         }
+        self.redraw();
     }
 
-    /// Calculates and applies a grid that needs to be drawn over the current texture
-    fn apply_grid(&self) {
-        let binding = &*self.imp().texture.borrow();
-        let texture = match binding {
-            Some(t) => t,
-            None => {
-                return;
-            }
-        };
-        let monitor = self.imp().monitor.get().expect("Monitor should be set");
-        let real_width = monitor.width_mm();
-        let real_height = monitor.height_mm();
+    /// Update the color of the grid and redraw the texture
+    pub fn update_grid_color(&self, color: RGBA) {
+        self.imp().color.replace(Some(color));
+        self.redraw();
+    }
 
-        // TODO: dynamic grid color
-        let black = RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build();
+    /// Update the width of the grid lines
+    pub fn set_gridline_width(&self, width: f32) {
+        self.imp().gridline_width.replace(width);
+        self.redraw();
+    }
 
-        // amount of squares
-        let height_amount = real_height / 25; // 25mm is about 1 inch
-        let width_amount = real_width / 25;
-        println!(
-            "The amount of horizontal sections should be: {}",
-            height_amount
-        );
+    /// Draws a grid in the given snapshot. This function needs the width and height of the current
+    /// texture. This width and height should be updated to fit the rotation of the texture. It
+    /// also needs the monitor that the image is displayed on to calculate the sizes of the
+    /// squares.
+    fn draw_grid(
+        snapshot: &gtk::Snapshot,
+        width: f32,
+        height: f32,
+        line_width: f32,
+        color: &RGBA,
+        monitor: &Monitor,
+    ) {
+        let total_vertical_squares = monitor.height_mm() / 25; // 25mm is about 1 inch
+        let total_horizontal_squares = monitor.width_mm() / 25;
 
-        // height and width of texture
-        let width = texture.width() as f32;
-        let height = texture.height() as f32;
-        println!("the height of the texture is: {}", height);
+        // 10 squares, 1080p, image: 2200p 2200/10 = 220
+        let pix_per_horizontal_square = width / total_horizontal_squares as f32;
+        let pix_per_vertical_square = height / total_vertical_squares as f32;
 
-        // the height and width of one square in pixels
-        let height_square = height / height_amount as f32;
-        let width_square = width / width_amount as f32;
-        println!("Height per square: {}", height_square);
-
-        let snapshot = gtk::Snapshot::new();
         snapshot.save();
-        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
-
-        let mut line_height = 0.0;
-        while line_height < height {
-            snapshot.append_color(&black, &Rect::new(0.0, line_height, width, 0.5));
-            line_height += height_square;
+        let mut line_position = 0.0;
+        while line_position < height as f32 {
+            snapshot.append_color(
+                color,
+                &Rect::new(0.0, line_position - (line_width / 2.0), width, line_width),
+            );
+            line_position += pix_per_vertical_square as f32;
+        }
+        line_position = 0.0;
+        while line_position < width as f32 {
+            snapshot.append_color(
+                color,
+                &Rect::new(line_position - (line_width / 2.0), 0.0, line_width, height),
+            );
+            line_position += pix_per_horizontal_square as f32;
         }
         snapshot.restore();
-        let gridded_texture = match snapshot.to_paintable(Some(&Size::new(width, height))) {
-            Some(t) => t,
-            None => {
-                println!("Could not create texture");
-                return;
-            }
-        };
-        self.imp().content.set_paintable(Some(&gridded_texture));
     }
 
-    /// Applies a rotation to the currently stored texture and updates the current picture that is
-    /// presented with the rotation
-    fn apply_rotation(&self) {
+    /// Applies the given rotation to the snapshot needs a width and height of the texture to be
+    /// rotated
+    fn draw_rotation(snapshot: &gtk::Snapshot, width: f32, height: f32, rotation: &Rotation) {
+        let angle_degree = rotation.get_angle_degree();
+        let (new_width, new_height) = match angle_degree {
+            90 | 270 => (height, width),
+            _ => (width, height),
+        };
+        snapshot.save();
+        snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
+        snapshot.rotate(angle_degree as f32);
+        snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
+        snapshot.restore();
+    }
+
+    /// Draws the given texture to the snapshot
+    fn draw_texture(snapshot: &gtk::Snapshot, texture: &Texture) {
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        snapshot.save();
+        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
+        snapshot.restore();
+    }
+
+    /// Function called when the image needs to be redrawn. Creates a new snapshot, sets it up
+    /// according to all the current settings and sets the content to the current texture.
+    fn redraw(&self) {
         let binding = &*self.imp().texture.borrow();
         let texture = match binding {
             Some(t) => t,
@@ -286,29 +331,38 @@ impl DdDisplayWindow {
             }
         };
 
-        let angle_degree = self.imp().rotation.borrow().get_angle_degree();
         let width = texture.width() as f32;
         let height = texture.height() as f32;
-        let (new_width, new_height) = match angle_degree {
+        let rotation = &self.imp().rotation.borrow();
+        let (new_width, new_height) = match rotation.get_angle_degree() {
             90 | 270 => (height, width),
             _ => (width, height),
         };
 
         let snapshot = gtk::Snapshot::new();
-        snapshot.save();
-        snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
-        snapshot.rotate(angle_degree as f32);
-        snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
-        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
-        snapshot.restore();
-        let rotated_texture = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
+
+        Self::draw_rotation(&snapshot, width, height, rotation);
+
+        Self::draw_texture(&snapshot, texture);
+
+        if self.imp().grid.get() {
+            let monitor = self
+                .imp()
+                .monitor
+                .get()
+                .expect("Expected a monitor to be set");
+            let color = &self.imp().color.borrow().expect("Expected color to be set");
+            let line_width = self.imp().gridline_width.get();
+            Self::draw_grid(&snapshot, new_width, new_height, line_width, color, monitor);
+        }
+
+        let paintable = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
             Some(t) => t,
             None => {
-                println!("Could not create texture");
                 return;
             }
         };
-        self.imp().content.set_paintable(Some(&rotated_texture));
+        self.imp().content.set_paintable(Some(&paintable));
     }
 
     /// Clear the media file and keep it alive to make sure it is cleared

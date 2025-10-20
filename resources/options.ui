@@ -4,71 +4,221 @@
     <template class="DdOptionsWindow" parent="GtkApplicationWindow">
         <property name="title">Options</property>
         <child>
-            <object class="GtkGrid">
-                <property name="halign">fill</property>
+            <object class="GtkBox">
                 <property name="orientation">vertical</property>
-                <property name="margin_top">6</property>
-                <property name="margin_bottom">6</property>
-                <property name="margin_start">6</property>
-                <property name="margin_end">6</property>
-                <property name="row-spacing">6</property>
-                <property name="column-spacing">6</property>
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="spacing">3</property>
+                <!-- Thumbnail layout options -->
                 <child>
-                    <object class="GtkLabel">
-                        <property name="label">columns</property>
-                        <layout>
-                            <property name="column">0</property>
-                            <property name="row">0</property>
-                        </layout>
+                    <object class="GtkGrid">
+                        <property name="halign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="margin_top">6</property>
+                        <property name="margin_bottom">6</property>
+                        <property name="margin_start">6</property>
+                        <property name="margin_end">6</property>
+                        <property name="row-spacing">6</property>
+                        <property name="column-spacing">6</property>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="label">Thumbnail layout options:</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">0</property>
+                                    <property name="column-span">2</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="label">columns</property>
+                                <property name="halign">fill</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkSpinButton" id="column">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="numeric">true</property>
+                                <property name="wrap">true</property>
+                                <layout>
+                                    <property name="column">1</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="label">rows</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">2</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkSpinButton" id="row">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="numeric">true</property>
+                                <property name="wrap">true</property>
+                                <layout>
+                                    <property name="column">1</property>
+                                    <property name="row">2</property>
+                                </layout>
+                            </object>
+                        </child>
                     </object>
                 </child>
+                <!-- Grid options-->
                 <child>
-                    <object class="GtkSpinButton" id="column">
-                        <property name="numeric">true</property>
-                        <property name="wrap">true</property>
-                        <layout>
-                            <property name="column">1</property>
-                            <property name="row">0</property>
-                        </layout>
+                    <object class="GtkGrid">
+                        <property name="halign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="margin_top">6</property>
+                        <property name="margin_bottom">6</property>
+                        <property name="margin_start">6</property>
+                        <property name="margin_end">6</property>
+                        <property name="row-spacing">6</property>
+                        <property name="column-spacing">6</property>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="label">Grid options:</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">0</property>
+                                    <property name="column-span">2</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="label">Color: </property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkDropDown" id="color_dropdown">
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <property name="model">
+                                    <object class="GtkStringList">
+                                        <items>
+                                            <item translatable="yes">Black</item>
+                                            <item translatable="yes">White</item>
+                                            <item translatable="yes">Red</item>
+                                            <item translatable="yes">Green</item>
+                                            <item translatable="yes">Blue</item>
+                                        </items>
+                                    </object>
+                                </property>
+                                <layout>
+                                    <property name="column">1</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="label">Grid line width: </property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">2</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkSpinButton" id="gridline_width">
+                                <property name="numeric">false</property>
+                                <property name="digits">1</property>
+                                <property name="wrap">true</property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <layout>
+                                    <property name="column">1</property>
+                                    <property name="row">2</property>
+                                </layout>
+                            </object>
+                        </child>
                     </object>
                 </child>
+                <!-- Default and confirm buttons-->
                 <child>
-                    <object class="GtkLabel">
-                        <property name="label">rows</property>
-                        <layout>
-                            <property name="column">0</property>
-                            <property name="row">1</property>
-                        </layout>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkSpinButton" id="row">
-                        <property name="numeric">true</property>
-                        <property name="wrap">true</property>
-                        <layout>
-                            <property name="column">1</property>
-                            <property name="row">1</property>
-                        </layout>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkButton">
-                        <signal name="clicked" handler="handle_default" swapped="true" />
-                        <property name="label">Default</property>
-                        <layout>
-                            <property name="column">0</property>
-                            <property name="row">2</property>
-                        </layout>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkButton">
-                        <signal name="clicked" handler="handle_confirm" swapped="true" />
-                        <property name="label">Confirm</property>
-                        <layout>
-                            <property name="column">1</property>
-                            <property name="row">2</property>
-                        </layout>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <property name="halign">fill</property>
+                        <property name="valign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="margin_top">6</property>
+                        <property name="margin_bottom">6</property>
+                        <property name="margin_start">6</property>
+                        <property name="margin_end">6</property>
+                        <property name="spacing">3</property>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_default" swapped="true" />
+                                <property name="label">Default</property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_confirm" swapped="true" />
+                                <property name="label">Confirm</property>
+                                <property name="halign">fill</property>
+                                <property name="valign">fill</property>
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                            </object>
+                        </child>
                     </object>
                 </child>
             </object>

@@ -1,5 +1,6 @@
 use gdk4::Monitor;
 use glib::subclass::*;
+use gtk::gio::prelude::SettingsExt;
 use gtk::glib::prelude::*;
 use gtk::glib::{self, clone};
 use gtk::prelude::{ApplicationExt, GtkWindowExt};
@@ -7,10 +8,10 @@ use gtk::subclass::prelude::*;
 use snafu::Report;
 
 use crate::errors::DragonDisplayError;
-use crate::try_emit;
 use crate::ui::control_window::DdControlWindow;
 use crate::ui::display_window::DdDisplayWindow;
-use crate::ui::options::DdOptionsWindow;
+use crate::ui::options::{ColorPreset, DdOptionsWindow};
+use crate::{try_emit, APP_ID};
 mod imp {
 
     use std::{cell::OnceCell, sync::OnceLock};
@@ -75,6 +76,10 @@ impl DragonDisplayProgram {
             display_window.toggle_fit();
         }));
 
+        control_window.connect_reset_display(clone!(@weak display_window => move |_| {
+            display_window.reset();
+        }));
+
         control_window.connect_grid(clone!(@weak display_window => move |_| {
             display_window.toggle_grid();
         }));
@@ -127,7 +132,7 @@ impl DragonDisplayProgram {
     }
 
     /// Update the grid of thumbnails for the pages in the control window of the program
-    pub fn update_grid(&self) {
+    pub fn update_thumbnail_grid(&self) {
         try_emit!(
             self,
             self.imp()
@@ -143,10 +148,35 @@ impl DragonDisplayProgram {
         let options_window = DdOptionsWindow::new(app);
 
         options_window.connect_confirm(clone!(@weak self as obj => move |window| {
-            window.destroy();
             obj.imp().control_window.get().expect("Expected a control window").set_options_sensitive(true);
-            obj.update_grid();
+            obj.update_thumbnail_grid();
+            window.destroy();
         }));
+
+        options_window.connect_color(clone!(@weak self as obj => move |_, color| {
+            let color = ColorPreset::from_index(color).to_rgba();
+            obj.imp().display_window.get().expect("Expected a display window").update_grid_color(color); 
+        }));
+
+        options_window.connect_grid_line_width(clone!(@weak self as obj => move |_, width| {
+            obj.imp().display_window.get().expect("Expected a display window").set_gridline_width(width);
+        }));
+
+        options_window.connect_close_request(
+            clone!(@weak self as obj => @default-return glib::Propagation::Proceed, move |_| {
+                let settings = gtk::gio::Settings::new(APP_ID);
+
+                let index = settings.int("grid-color-preset") as u32;
+                let color = ColorPreset::from_index(index).to_rgba();
+                obj.imp().display_window.get().expect("Expected a display window").update_grid_color(color); 
+
+                let width = settings.double("grid-line-width") as f32;
+                obj.imp().display_window.get().expect("Expected a display window").set_gridline_width(width);
+
+                obj.imp().control_window.get().expect("Expected a control window").set_options_sensitive(true);
+                glib::Propagation::Proceed
+            }),
+        );
 
         options_window.present();
     }

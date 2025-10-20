@@ -1,4 +1,9 @@
+use std::cell::Cell;
+
 use adw::Application;
+use gdk4::builders::RGBABuilder;
+use gdk4::RGBA;
+use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 use gtk::{prelude::*, Adjustment};
@@ -6,6 +11,47 @@ use gtk::{prelude::*, Adjustment};
 use crate::APP_ID;
 pub const MAX_COLUMN_ROW_AMOUNT: f64 = 20.0;
 pub const MIN_COLUMN_ROW_AMOUNT: f64 = 1.0;
+pub const MIN_GRID_WIDTH: f64 = 0.1;
+pub const MAX_GRID_WIDTH: f64 = 5.0;
+
+/// To avoid errors the order of this list should be equal to the order of the dropdown list
+/// defined in the options.ui
+pub enum ColorPreset {
+    Black,
+    White,
+    Red,
+    Green,
+    Blue,
+}
+
+impl ColorPreset {
+    /// Create a new color preset based on the dropdown index
+    pub fn from_index(index: u32) -> Self {
+        match index {
+            0 => Self::Black,
+            1 => Self::White,
+            2 => Self::Red,
+            3 => Self::Green,
+            4 => Self::Blue,
+            _ => panic!("Found invalid index"),
+        }
+    }
+
+    pub fn to_rgba(&self) -> RGBA {
+        use ColorPreset as C;
+        match self {
+            C::Black => RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build(),
+            C::White => RGBABuilder::new()
+                .red(255.0)
+                .green(255.0)
+                .blue(255.0)
+                .build(),
+            C::Red => RGBABuilder::new().red(255.0).green(0.0).blue(0.0).build(),
+            C::Green => RGBABuilder::new().red(0.0).green(255.0).blue(0.0).build(),
+            C::Blue => RGBABuilder::new().red(0.0).green(0.0).blue(255.0).build(),
+        }
+    }
+}
 
 mod imp {
     use std::sync::OnceLock;
@@ -13,7 +59,7 @@ mod imp {
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, Button, CompositeTemplate, SpinButton};
+    use gtk::{glib, Button, CompositeTemplate, DropDown, SpinButton};
     use gtk::{prelude::*, template_callbacks};
 
     use crate::APP_ID;
@@ -26,6 +72,10 @@ mod imp {
         pub row: TemplateChild<SpinButton>,
         #[template_child]
         pub column: TemplateChild<SpinButton>,
+        #[template_child]
+        pub color_dropdown: TemplateChild<DropDown>,
+        #[template_child]
+        pub gridline_width: TemplateChild<SpinButton>,
     }
 
     // The central trait for subclassing a GObject
@@ -59,6 +109,12 @@ mod imp {
             settings
                 .set_int("imagegrid-column-amount", self.column.value() as i32)
                 .expect("Could not update column");
+            settings
+                .set_int("grid-color-preset", self.color_dropdown.selected() as i32)
+                .expect("Could not color preset");
+            settings
+                .set_double("grid-line-width", self.gridline_width.value())
+                .expect("Could not color preset");
             self.obj().emit_by_name::<()>("confirm", &[]);
         }
 
@@ -66,6 +122,7 @@ mod imp {
         fn handle_default(&self, _: Button) {
             self.row.set_value(3.0);
             self.column.set_value(3.0);
+            self.color_dropdown.set_selected(0);
         }
     }
 
@@ -73,7 +130,17 @@ mod imp {
     impl ObjectImpl for DdOptionsWindow {
         fn signals() -> &'static [glib::subclass::Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| vec![Signal::builder("confirm").build()])
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("confirm").build(),
+                    Signal::builder("color")
+                        .param_types([u32::static_type()])
+                        .build(),
+                    Signal::builder("grid-line-width")
+                        .param_types([f32::static_type()])
+                        .build(),
+                ]
+            })
         }
 
         fn constructed(&self) {
@@ -131,6 +198,31 @@ impl DdOptionsWindow {
         imp.row.set_adjustment(&row_adjustment);
         imp.column.set_adjustment(&column_adjustment);
 
+        let current_color_preset = Cell::new(imp.color_dropdown.selected());
+        let color_index = settings.int("grid-color-preset") as u32;
+        imp.color_dropdown.set_selected(color_index);
+        imp.color_dropdown
+            .connect_selected_notify(clone!(@weak object => move |dropdown| {
+                if current_color_preset.get() != dropdown.selected() {
+                    current_color_preset.set(dropdown.selected());
+                    object.emit_by_name::<()>("color", &[&dropdown.selected()])
+                }
+            }));
+
+        let gridline_width = settings.double("grid-line-width");
+        let gridline_adjustment = Adjustment::new(
+            gridline_width,
+            MIN_GRID_WIDTH,
+            MAX_GRID_WIDTH,
+            0.1,
+            1.0,
+            0.0,
+        );
+        imp.gridline_width.set_adjustment(&gridline_adjustment);
+        gridline_adjustment.connect_value_changed(clone!(@weak object => move |adjustment| {
+            object.emit_by_name::<()>("grid-line-width", &[&(adjustment.value() as f32)]);
+        }));
+
         object
     }
 
@@ -141,6 +233,31 @@ impl DdOptionsWindow {
             true,
             glib::closure_local!(|window| {
                 f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when the confirm button is pressed
+    pub fn connect_grid_line_width<F: Fn(&Self, f32) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "grid-line-width",
+            true,
+            glib::closure_local!(|window, width| {
+                f(window, width);
+            }),
+        )
+    }
+
+    /// Signal emitted when a new color is selected
+    pub fn connect_color<F: Fn(&Self, u32) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "color",
+            true,
+            glib::closure_local!(|window, color| {
+                f(window, color);
             }),
         )
     }
