@@ -204,17 +204,25 @@ impl DdDisplayWindow {
     pub fn toggle_fit(&self) {
         if self.imp().fit.get() {
             self.imp().fit.replace(false);
+            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
         } else {
             self.imp().fit.replace(true);
-        }
-        if self.imp().fit.get() {
             self.imp().content.set_content_fit(gtk::ContentFit::Fill);
-        } else {
-            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
         }
     }
 
     pub fn toggle_grid(&self) {
+        if self.imp().grid.get() {
+            self.imp().grid.replace(false);
+            self.apply_rotation();
+        } else {
+            self.imp().grid.replace(true);
+            self.apply_grid();
+        }
+    }
+
+    /// Calculates and applies a grid that needs to be drawn over the current texture
+    fn apply_grid(&self) {
         let binding = &*self.imp().texture.borrow();
         let texture = match binding {
             Some(t) => t,
@@ -225,11 +233,46 @@ impl DdDisplayWindow {
         let monitor = self.imp().monitor.get().expect("Monitor should be set");
         let real_width = monitor.width_mm();
         let real_height = monitor.height_mm();
-        // TODO: dynamic grid color
 
+        // TODO: dynamic grid color
         let black = RGBABuilder::new().red(0.0).green(0.0).blue(0.0).build();
+
+        // amount of squares
+        let height_amount = real_height / 25; // 25mm is about 1 inch
+        let width_amount = real_width / 25;
+        println!(
+            "The amount of horizontal sections should be: {}",
+            height_amount
+        );
+
+        // height and width of texture
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        println!("the height of the texture is: {}", height);
+
+        // the height and width of one square in pixels
+        let height_square = height / height_amount as f32;
+        let width_square = width / width_amount as f32;
+        println!("Height per square: {}", height_square);
+
         let snapshot = gtk::Snapshot::new();
         snapshot.save();
+        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
+
+        let mut line_height = 0.0;
+        while line_height < height {
+            snapshot.append_color(&black, &Rect::new(0.0, line_height, width, 0.5));
+            line_height += height_square;
+        }
+        snapshot.restore();
+        let gridded_texture = match snapshot.to_paintable(Some(&Size::new(width, height))) {
+            Some(t) => t,
+            None => {
+                println!("Could not create texture");
+                return;
+            }
+        };
+        self.imp().content.set_paintable(Some(&gridded_texture));
     }
 
     /// Applies a rotation to the currently stored texture and updates the current picture that is

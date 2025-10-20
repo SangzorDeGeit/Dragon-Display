@@ -75,6 +75,10 @@ impl DragonDisplayProgram {
             display_window.toggle_fit();
         }));
 
+        control_window.connect_grid(clone!(@weak display_window => move |_| {
+            display_window.toggle_grid();
+        }));
+
         control_window.connect_rotate90(clone!(@weak display_window => move |_| {
             display_window.rotate_90();
         }));

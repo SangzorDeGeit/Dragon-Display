@@ -112,6 +112,15 @@
                                                             swapped="true" />
                                                     </object>
                                                 </child>
+                                                <child>
+                                                    <object class="GtkToggleButton">
+                                                        <property name="label">Apply grid</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="toggled" handler="handle_grid"
+                                                            swapped="true" />
+                                                    </object>
+                                                </child>
                                             </object>
                                         </child>
                                         <child>

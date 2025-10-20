@@ -100,6 +100,11 @@ mod imp {
         fn handle_fit(&self, _: Button) {
             self.obj().emit_by_name::<()>("fit", &[]);
         }
+
+        #[template_callback]
+        fn handle_grid(&self, _: Button) {
+            self.obj().emit_by_name::<()>("grid", &[]);
+        }
     }
 
     // Trait shared by all GObjects
@@ -121,6 +126,7 @@ mod imp {
                         .param_types([String::static_type()])
                         .build(),
                     Signal::builder("fit").build(),
+                    Signal::builder("grid").build(),
                     Signal::builder("error")
                         .param_types([String::static_type(), bool::static_type()])
                         .build(),
@@ -372,6 +378,17 @@ impl DdControlWindow {
     pub fn connect_fit<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
         self.connect_closure(
             "fit",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when the grid button is pressed
+    pub fn connect_grid<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "grid",
             true,
             glib::closure_local!(|window| {
                 f(window);
