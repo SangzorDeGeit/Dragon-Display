@@ -1,6 +1,14 @@
 # Dragon-Display
 Application based on Rust to display images on a second screen, suited for Dungeons &amp; Dragons
 
+## Settings
+Dragon-Display uses settings to store certain program functionalities. You need to run the following commands in order to make Dragon-Display work (on linux):  
+```
+mkdir -p $HOME/.local/share/glib-2.0/schemas
+cp com.SangzorDeGeit.Dragon-Display.gschema.xml $HOME/.local/share/glib-2.0/schemas/
+glib-compile-schemas $HOME/.local/share/glib-2.0/schemas/
+```
+
 # Using Google Drive
 In order to use google drive you need to get a client secret from Google and make sure that some values are set correctly in this file.
 ## Configuring the Client secret
@@ -24,5 +32,3 @@ To get a client secret follow the following steps:
 
 ## Setup folder in your drive
 Create a folder in your google drive in which you put all the images that you want to display using Dragon-Display. When adding a campaign you can select this folder. Dragon display will use the selected folder to synchronize images to a local folder
-
-
