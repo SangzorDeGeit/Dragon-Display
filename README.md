@@ -5,7 +5,7 @@ Application based on Rust to display images on a second screen, suited for Dunge
 Dragon-Display uses settings to store certain program functionalities. You need to run the following commands in order to make Dragon-Display work (on linux):  
 ```
 mkdir -p $HOME/.local/share/glib-2.0/schemas
-cp com.SangzorDeGeit.Dragon-Display.gschema.xml $HOME/.local/share/glib-2.0/schemas/
+cp src/settings/com.github.SangzorDeGeit.Dragon-Display.gschema.xml $HOME/.local/share/glib-2.0/schemas/
 glib-compile-schemas $HOME/.local/share/glib-2.0/schemas/
 ```
 
