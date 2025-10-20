@@ -12,7 +12,7 @@ use crate::APP_ID;
 pub const MAX_COLUMN_ROW_AMOUNT: f64 = 20.0;
 pub const MIN_COLUMN_ROW_AMOUNT: f64 = 1.0;
 pub const MIN_GRID_WIDTH: f64 = 0.1;
-pub const MAX_GRID_WIDTH: f64 = 5.0;
+pub const MAX_GRID_WIDTH: f64 = 10.0;
 
 /// To avoid errors the order of this list should be equal to the order of the dropdown list
 /// defined in the options.ui
