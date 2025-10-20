@@ -1,23 +1,19 @@
 use adw::Application;
-use async_channel::Sender;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::config::Campaign;
-use crate::setup_manager::AddRemoveMessage;
+use crate::campaign::DdCampaign;
 
 mod imp {
-    use std::cell::RefCell;
+    use std::sync::OnceLock;
 
-    use async_channel::Sender;
     use glib::subclass::InitializingObject;
+    use gtk::glib::object::ObjectExt;
+    use gtk::glib::subclass::Signal;
     use gtk::prelude::StaticTypeExt;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Label};
-
-    use crate::config::Campaign;
-    use crate::setup_manager::AddRemoveMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -25,8 +21,6 @@ mod imp {
     pub struct RemoveConfirmWindow {
         #[template_child]
         pub message_label: TemplateChild<Label>,
-        pub sender: RefCell<Option<Sender<AddRemoveMessage>>>,
-        pub campaign: RefCell<Campaign>,
     }
 
     // The central trait for subclassing a GObject
@@ -53,29 +47,26 @@ mod imp {
     impl RemoveConfirmWindow {
         #[template_callback]
         fn handle_yes(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Campaign {
-                    campaign: self.campaign.borrow().clone(),
-                })
-                .expect("Channel closed");
+            self.obj().emit_by_name::<()>("yes", &[]);
         }
 
         #[template_callback]
         fn handle_no(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Cancel)
-                .expect("Channel closed");
+            self.obj().emit_by_name::<()>("no", &[]);
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for RemoveConfirmWindow {
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("no").build(),
+                    Signal::builder("yes").build(),
+                ]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -100,28 +91,35 @@ glib::wrapper! {
 }
 
 impl RemoveConfirmWindow {
-    pub fn new(
-        app: &Application,
-        sender: Option<Sender<AddRemoveMessage>>,
-        campaign: Campaign,
-    ) -> Self {
-        // set all properties
+    pub fn new(app: &Application, campaign: &DdCampaign) -> Self {
         let object = glib::Object::new::<Self>();
-        let imp = object.imp();
-        imp.campaign.replace(campaign);
-        imp.sender.replace(sender);
         object.set_property("application", app);
 
-        Self::initialize(&object.imp());
+        let message = format!("Are you sure you want to delete {}?", campaign.name());
+        object.imp().message_label.set_text(&message);
+
         object
     }
 
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::RemoveConfirmWindow) {
-        let message = format!(
-            "Are you sure you want to delete {}?",
-            imp.campaign.borrow().name
-        );
-        imp.message_label.set_text(&message);
+    /// The signal emitted when the yes button is clicked
+    pub fn connect_yes<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "yes",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// The signal emitted when the no button is clicked
+    pub fn connect_no<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "no",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
     }
 }

@@ -1,25 +1,24 @@
 use adw::Application;
-use async_channel::Sender;
+use gtk::glib::clone;
 use gtk::prelude::ObjectExt;
-use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use gtk::{prelude::*, Button};
 
+use crate::campaign::DdCampaign;
 use crate::config::Campaign;
-use crate::setup_manager::SelectMessage;
-use crate::widgets::campaign_button::CampaignButton;
 
 mod imp {
     use std::cell::RefCell;
+    use std::sync::OnceLock;
 
-    use async_channel::Sender;
-    use glib::subclass::InitializingObject;
-    use gtk::prelude::StaticTypeExt;
+    use glib::subclass::{InitializingObject, Signal};
+    use gtk::glib::object::ObjectExt;
+    use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Grid, Label};
 
-    use crate::config::Campaign;
-    use crate::setup_manager::SelectMessage;
+    use crate::campaign::DdCampaign;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -31,8 +30,7 @@ mod imp {
         pub campaign_grid: TemplateChild<Grid>,
         #[template_child]
         pub remove_add_box: TemplateChild<Box>,
-        pub sender: RefCell<Option<Sender<SelectMessage>>>,
-        pub campaign_list: RefCell<Vec<Campaign>>,
+        pub message: RefCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -59,27 +57,31 @@ mod imp {
     impl SelectCampaignWindow {
         #[template_callback]
         fn handle_remove(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(SelectMessage::Remove)
-                .expect("Channel closed");
+            let obj = self.obj();
+            obj.emit_by_name::<()>("remove-campaign", &[]);
         }
 
         #[template_callback]
         fn handle_add(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(SelectMessage::Add)
-                .expect("Channel closed");
+            let obj = self.obj();
+            obj.emit_by_name::<()>("add-campaign", &[]);
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for SelectCampaignWindow {
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("remove-campaign").build(),
+                    Signal::builder("add-campaign").build(),
+                    Signal::builder("campaign")
+                        .param_types([DdCampaign::static_type()])
+                        .build(),
+                ]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -104,28 +106,14 @@ glib::wrapper! {
 }
 
 impl SelectCampaignWindow {
-    pub fn new(
-        app: &Application,
-        sender: Option<Sender<SelectMessage>>,
-        campaign_list: Vec<Campaign>,
-    ) -> Self {
+    pub fn new(app: &Application, campaign_list: Vec<Campaign>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();
-        imp.campaign_list.replace(campaign_list);
-        imp.sender.replace(sender);
         object.set_property("application", app);
 
-        Self::initialize(&object.imp());
-        object
-    }
-
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::SelectCampaignWindow) {
-        let sender = imp.sender.borrow().clone().expect("No sender found");
-        if imp.campaign_list.borrow().is_empty() {
+        if campaign_list.is_empty() {
             imp.select_message.set_text("You have no campaigns yet");
-            // remove the 'remove button' from this window
             imp.remove_add_box.remove(
                 &imp.remove_add_box
                     .first_child()
@@ -136,11 +124,52 @@ impl SelectCampaignWindow {
         }
 
         let mut index = 0;
-        for campaign in imp.campaign_list.borrow().iter() {
-            let button = CampaignButton::new(campaign.clone(), Some(sender.clone()));
+        for campaign in campaign_list {
+            let button = Button::builder().label(&campaign.name).build();
             imp.campaign_grid
                 .attach(&button, index % 4, index / 4, 1, 1);
+            let campaign = DdCampaign::from(campaign);
+            button.connect_clicked(
+                clone!(@weak object => move |_| object.emit_by_name::<()>("campaign", &[&campaign])),
+            );
             index += 1;
         }
+        object
+    }
+
+    /// The signal emitted when the remove button is clicked
+    pub fn connect_remove_campaign<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "remove-campaign",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// The signal emitted when the add button is clicked
+    pub fn connect_add_campaign<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "add-campaign",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when a campaign button is clicked
+    pub fn connect_campaign<F: Fn(&Self, DdCampaign) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "campaign",
+            true,
+            glib::closure_local!(|window, campaign| {
+                f(window, campaign);
+            }),
+        )
     }
 }

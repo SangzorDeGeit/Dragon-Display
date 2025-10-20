@@ -1,34 +1,16 @@
 use adw::Application;
-use async_channel::Sender;
-use google_drive::AccessToken;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
 
-use crate::config::Campaign;
-use crate::setup_manager::AddRemoveMessage;
-
-pub enum InitializeMessage {
-    UserConsentUrl { url: String },
-    Token { token: AccessToken },
-    Error { error: anyhow::Error },
-}
-
 mod imp {
-    use super::InitializeMessage;
-    use async_channel::Sender;
-    use gtk::glib::spawn_future_local;
-    use std::cell::RefCell;
+    use gtk::glib::subclass::Signal;
+    use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
     use gtk::{glib, template_callbacks, Button, CompositeTemplate, Label};
-
-    use crate::google_drive::initialize_client;
-    use crate::config::{Campaign, SynchronizationOption};
-    use crate::setup_manager::AddRemoveMessage;
-    use crate::runtime;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -38,9 +20,6 @@ mod imp {
         pub message_label: TemplateChild<Label>,
         #[template_child]
         pub link_label: TemplateChild<Label>,
-        pub campaign_sender: RefCell<Option<Sender<AddRemoveMessage>>>,
-        pub shutdown_sender: RefCell<Option<Sender<()>>>,
-        pub campaign: RefCell<Campaign>,
     }
 
     // The central trait for subclassing a GObject
@@ -67,74 +46,27 @@ mod imp {
     impl GoogledriveConnectWindow {
         #[template_callback]
         fn handle_cancel(&self, _: Button) {
-            if let Some(shutdown_sender) = self.shutdown_sender.borrow().clone() {
-                shutdown_sender.send_blocking(()).expect("Channel closed");
-            }
-            self.campaign_sender
-                .borrow()
-                .clone()
-                .expect("No campaign sender found")
-                .send_blocking(AddRemoveMessage::Cancel)
-                .expect("Channel closed");
+            self.obj().emit_by_name::<()>("cancel", &[]);
         }
 
         #[template_callback]
         fn handle_connect(&self, button: Button) {
-            let (shutdown_sender, shutdown_receiver) = async_channel::bounded(1);
-            let (backend_sender, backend_receiver) = async_channel::unbounded();
-            runtime().spawn(async move {
-                initialize_client(backend_sender, shutdown_receiver).await;
-            });
+            self.obj().emit_by_name::<()>("connect", &[]);
             button.set_sensitive(false);
-            self.shutdown_sender.replace(Some(shutdown_sender));
-
-            let link_label = self.link_label.clone();
-            let campaign = self.campaign.borrow().clone();
-            let name = campaign.name;
-            let path = campaign.path;
-            let google_folder = match campaign.sync_option {
-                SynchronizationOption::None => {
-                    panic!("Connect window was called with None sync option")
-                }
-                SynchronizationOption::GoogleDrive {
-                    google_drive_sync_folder: f,
-                    ..
-                } => f,
-            };
-            let campaign_sender = self
-                .campaign_sender
-                .borrow()
-                .clone()
-                .expect("No sender found");
-            spawn_future_local(async move {
-                while let Ok(message) = backend_receiver.recv().await {
-                    match message {
-                        InitializeMessage::UserConsentUrl { url } => link_label.set_text(&format!(
-                                "If the browser does not open automatically, copy paste the following link into your browser: {}"
-                                , &url)),
-                        InitializeMessage::Token { token } => {
-                            let new_campaign = Campaign::new_googledrive(
-                                name.clone(), 
-                                path.clone(), 
-                                token.access_token, 
-                                token.refresh_token, 
-                                google_folder.clone()
-                            ); 
-                            campaign_sender.send_blocking(AddRemoveMessage::Campaign { campaign: new_campaign }).expect("Channel closed");
-                        }
-                        InitializeMessage::Error { error } => campaign_sender
-                            .send_blocking(AddRemoveMessage::Error {
-                                error, 
-                                fatal: false })
-                            .expect("Channel closed"),
-                    }
-                }
-            });
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for GoogledriveConnectWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("cancel").build(),
+                    Signal::builder("connect").build(),
+                ]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -159,18 +91,11 @@ glib::wrapper! {
 }
 
 impl GoogledriveConnectWindow {
-    pub fn new(
-        app: &Application,
-        campaign: Campaign,
-        campaign_sender: Sender<AddRemoveMessage>,
-        reconnect: bool,
-    ) -> Self {
+    pub fn new(app: &Application, reconnect: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
         let imp = object.imp();
-        imp.campaign.replace(campaign);
-        imp.campaign_sender.replace(Some(campaign_sender));
 
         let message: &str;
         if reconnect {
@@ -181,5 +106,33 @@ impl GoogledriveConnectWindow {
         imp.message_label.set_text(message);
 
         object
+    }
+
+    /// Update the label of connect message to add a url
+    pub fn update_url(&self, url: &str) {
+        let msg = format!("If the browser does not open automatically, copy paste the following link into your browser: {}" , url);
+        self.imp().link_label.set_text(&msg);
+    }
+
+    /// Signal emitted when the cancel button is pressed
+    pub fn connect_cancel<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "cancel",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when the connect button is pressed
+    pub fn connect_connect<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "connect",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
     }
 }

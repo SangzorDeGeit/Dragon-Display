@@ -1,32 +1,65 @@
-use adw::Application;
-use async_channel::Receiver;
-use gdk4::Texture;
-use glib::spawn_future_local;
-use gtk::gdk_pixbuf::Pixbuf;
-use gtk::gio::File;
+use gdk4::{Monitor, Texture, RGBA};
+use gtk::graphene::{Point, Rect, Size};
+use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use gtk::{gio, glib, Picture, Video};
-use gtk::{prelude::*, Widget};
+use gtk::{gio, glib, MediaFile};
+use snafu::{OptionExt, Report};
 
-use crate::program_manager::DisplayWindowMessage;
+use crate::errors::{DragonDisplayError, OtherSnafu};
+use crate::{try_emit, APP_ID};
+
+use super::options::ColorPreset;
+pub enum Rotation {
+    None,
+    Clockwise,
+    UpsideDown,
+    Counterclockwise,
+}
+
+impl Rotation {
+    fn get_angle_degree(&self) -> i32 {
+        match self {
+            Rotation::None => 0,
+            Rotation::Clockwise => 90,
+            Rotation::UpsideDown => 180,
+            Rotation::Counterclockwise => 270,
+        }
+    }
+}
+
+impl Default for Rotation {
+    fn default() -> Self {
+        Rotation::None
+    }
+}
 
 mod imp {
 
-    use std::cell::{Cell, RefCell};
+    use crate::ui::display_window::Rotation;
+    use std::cell::{Cell, OnceCell, RefCell};
+    use std::sync::OnceLock;
 
+    use gdk4::{Monitor, Texture, RGBA};
     use glib::subclass::InitializingObject;
-    use gtk::prelude::*;
+    use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, Box, Button, CompositeTemplate};
+    use gtk::{glib, Button, CompositeTemplate, MediaFile};
+    use gtk::{prelude::*, Picture};
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/dragon/display/display_window.ui")]
     pub struct DdDisplayWindow {
         #[template_child]
-        pub content: TemplateChild<Box>,
+        pub content: TemplateChild<Picture>,
         pub fit: Cell<bool>,
-        pub current_content: RefCell<String>,
+        pub grid: Cell<bool>,
+        pub rotation: RefCell<Rotation>,
+        pub texture: RefCell<Option<Texture>>,
+        pub media_file: OnceCell<MediaFile>,
+        pub monitor: OnceCell<Monitor>,
+        pub color: RefCell<Option<RGBA>>,
+        pub gridline_width: Cell<f32>,
     }
 
     // The central trait for subclassing a GObject
@@ -50,6 +83,15 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for DdDisplayWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![Signal::builder("error")
+                    .param_types([String::static_type(), bool::static_type()])
+                    .build()]
+            })
+        }
+
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -74,99 +116,282 @@ glib::wrapper! {
 }
 
 impl DdDisplayWindow {
-    pub fn new(app: &Application, receiver: Receiver<DisplayWindowMessage>) -> Self {
-        // set all properties
+    pub fn new(monitor: &Monitor) -> Self {
         let object = glib::Object::new::<Self>();
-        object.set_property("application", app);
-        let imp = object.imp();
-        Self::await_updates(imp, receiver);
+        object
+            .imp()
+            .media_file
+            .set(MediaFile::new())
+            .expect("Expected media file to not be set");
+        object
+            .imp()
+            .monitor
+            .set(monitor.to_owned())
+            .expect("Expected monitor to not be set");
+        let settings = gtk::gio::Settings::new(APP_ID);
+        let color_index = settings.int("grid-color-preset") as u32;
+        let color = ColorPreset::from_index(color_index).to_rgba();
+        object.imp().color.replace(Some(color));
+
+        let gridline_width = settings.double("grid-line-width") as f32;
+        object.imp().gridline_width.set(gridline_width);
 
         object
     }
 
-    fn await_updates(imp: &imp::DdDisplayWindow, receiver: Receiver<DisplayWindowMessage>) {
-        let content = imp.content.clone();
-        let fit = imp.fit.clone();
-        let current_content = imp.current_content.clone();
-        spawn_future_local(async move {
-            // create a pixbuf from file
-            // create a texture from the pixbuf (this is a paintable)
-            // create the picture from the paintable
-            while let Ok(message) = receiver.recv().await {
-                let child = match content.first_child() {
-                    Some(child) => {
-                        content.remove(&child);
-                        child
-                    }
-                    None => Widget::from(Picture::new()),
-                };
-                match message {
-                    DisplayWindowMessage::Image { picture_path } => {
-                        current_content.replace(picture_path.clone());
-                        let image = match child.downcast_ref::<Picture>() {
-                            Some(image) => {
-                                image.set_filename(Some(&picture_path));
-                                image
-                            }
-                            None => {
-                                let file = File::for_path(picture_path);
-                                &Picture::builder().file(&file).build()
-                            }
-                        };
-                        if fit.get() {
-                            image.set_content_fit(gtk::ContentFit::Fill);
-                        }
-                        content.append(image);
-                    }
-                    DisplayWindowMessage::Fit { fit: f } => {
-                        fit.set(f);
-                        let child = match child.downcast_ref::<Picture>() {
-                            Some(child) => child,
-                            None => continue,
-                        };
+    /// Disconnect the media that the display is holding on to and set the content to nothing
+    pub fn reset(&self) {
+        self.disconnect_media();
+        self.imp().texture.replace(None);
+        self.imp().content.set_paintable(None::<&Texture>);
+    }
 
-                        if f {
-                            child.set_content_fit(gtk::ContentFit::Fill);
-                        } else {
-                            child.set_content_fit(gtk::ContentFit::Contain);
-                        }
-                        content.append(child);
-                    }
-                    DisplayWindowMessage::Rotate { rotation } => {
-                        let child = match child.downcast_ref::<Picture>() {
-                            Some(child) => child,
-                            None => continue,
-                        };
-                        let pixbuf = match Pixbuf::from_file(current_content.borrow().clone()) {
-                            Ok(p) => p,
-                            Err(_) => continue,
-                        };
-                        let pixbuf = pixbuf.rotate_simple(rotation).expect("Could not rotate");
-                        let texture = Texture::for_pixbuf(&pixbuf);
-                        child.set_paintable(Some(&texture));
-                        content.append(child);
-                    }
-                    DisplayWindowMessage::Video { video_path } => {
-                        current_content.replace(video_path.clone());
-                        let video = match child.downcast_ref::<Video>() {
-                            Some(video) => {
-                                video.set_filename(Some(&video_path));
-                                video
-                            }
-                            None => {
-                                let file = File::for_path(video_path);
-                                &Video::builder()
-                                    .loop_(true)
-                                    .autoplay(true)
-                                    .file(&file)
-                                    .sensitive(false)
-                                    .build()
-                            }
-                        };
-                        content.append(video);
-                    }
-                }
-            }
+    /// Tries to rotate the current texture by 90 degrees, if there is no current texture the
+    /// internal rotation value is still updated
+    pub fn rotate_90(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::Clockwise,
+            Rotation::Clockwise => Rotation::UpsideDown,
+            Rotation::UpsideDown => Rotation::Counterclockwise,
+            Rotation::Counterclockwise => Rotation::None,
         });
+        self.redraw();
+    }
+
+    /// Tries to rotate the current texture by 180 degrees, if there is no current texture the
+    /// internal rotation value is still updated
+    pub fn rotate_180(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::UpsideDown,
+            Rotation::Clockwise => Rotation::Counterclockwise,
+            Rotation::UpsideDown => Rotation::None,
+            Rotation::Counterclockwise => Rotation::Clockwise,
+        });
+        self.redraw();
+    }
+
+    /// Tries to rotate the current texture by 270 degrees, if there is no current texture the
+    /// internal rotation value is still updated
+    pub fn rotate_270(&self) {
+        self.imp().rotation.replace_with(|rotation| match rotation {
+            Rotation::None => Rotation::Counterclockwise,
+            Rotation::Clockwise => Rotation::None,
+            Rotation::UpsideDown => Rotation::Clockwise,
+            Rotation::Counterclockwise => Rotation::UpsideDown,
+        });
+        self.redraw();
+    }
+
+    /// Update the texture of the display window and set it to an image that is at the given path
+    pub fn set_image(&self, path_to_image: String) {
+        self.disconnect_media();
+        let texture = try_emit!(
+            self,
+            Texture::from_filename(&path_to_image)
+                .ok()
+                .context(OtherSnafu {
+                    msg: format!("Could not load image at {}", &path_to_image)
+                }),
+            false
+        );
+        self.imp().texture.replace(Some(texture));
+
+        // set the fit
+        if self.imp().fit.get() {
+            self.imp().content.set_content_fit(gtk::ContentFit::Fill);
+        } else {
+            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
+        }
+
+        self.redraw();
+    }
+
+    /// Set the content of the display window to a video
+    pub fn set_video(&self, path_to_video: String) {
+        self.disconnect_media();
+        self.imp().texture.replace(None);
+        let media_file = self
+            .imp()
+            .media_file
+            .get()
+            .expect("Expected media file to be set");
+        media_file.set_filename(Some(&path_to_video));
+        media_file.play();
+        media_file.set_loop(true);
+        media_file.set_muted(true);
+        self.imp().content.set_paintable(Some(media_file));
+    }
+
+    /// Toggle the content fit of the image, if there is no picture it will update the value but
+    /// silently fail to update the picture
+    pub fn toggle_fit(&self) {
+        if self.imp().fit.get() {
+            self.imp().fit.replace(false);
+            self.imp().content.set_content_fit(gtk::ContentFit::Contain);
+        } else {
+            self.imp().fit.replace(true);
+            self.imp().content.set_content_fit(gtk::ContentFit::Fill);
+        }
+    }
+
+    /// Toggle a grid over the current texture, if there is no active texture it will update the
+    /// value but silently fail to update the content.
+    pub fn toggle_grid(&self) {
+        if self.imp().grid.get() {
+            self.imp().grid.replace(false);
+        } else {
+            self.imp().grid.replace(true);
+        }
+        self.redraw();
+    }
+
+    /// Update the color of the grid and redraw the texture
+    pub fn update_grid_color(&self, color: RGBA) {
+        self.imp().color.replace(Some(color));
+        self.redraw();
+    }
+
+    /// Update the width of the grid lines
+    pub fn set_gridline_width(&self, width: f32) {
+        self.imp().gridline_width.replace(width);
+        self.redraw();
+    }
+
+    /// Draws a grid in the given snapshot. This function needs the width and height of the current
+    /// texture. This width and height should be updated to fit the rotation of the texture. It
+    /// also needs the monitor that the image is displayed on to calculate the sizes of the
+    /// squares.
+    fn draw_grid(
+        snapshot: &gtk::Snapshot,
+        width: f32,
+        height: f32,
+        line_width: f32,
+        color: &RGBA,
+        monitor: &Monitor,
+    ) {
+        let total_vertical_squares = monitor.height_mm() / 25; // 25mm is about 1 inch
+        let total_horizontal_squares = monitor.width_mm() / 25;
+
+        // 10 squares, 1080p, image: 2200p 2200/10 = 220
+        let pix_per_horizontal_square = width / total_horizontal_squares as f32;
+        let pix_per_vertical_square = height / total_vertical_squares as f32;
+
+        snapshot.save();
+        let mut line_position = 0.0;
+        while line_position < height as f32 {
+            snapshot.append_color(
+                color,
+                &Rect::new(0.0, line_position - (line_width / 2.0), width, line_width),
+            );
+            line_position += pix_per_vertical_square as f32;
+        }
+        line_position = 0.0;
+        while line_position < width as f32 {
+            snapshot.append_color(
+                color,
+                &Rect::new(line_position - (line_width / 2.0), 0.0, line_width, height),
+            );
+            line_position += pix_per_horizontal_square as f32;
+        }
+        snapshot.restore();
+    }
+
+    /// Applies the given rotation to the snapshot needs a width and height of the texture to be
+    /// rotated
+    fn draw_rotation(snapshot: &gtk::Snapshot, width: f32, height: f32, rotation: &Rotation) {
+        let angle_degree = rotation.get_angle_degree();
+        let (new_width, new_height) = match angle_degree {
+            90 | 270 => (height, width),
+            _ => (width, height),
+        };
+        snapshot.save();
+        snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
+        snapshot.rotate(angle_degree as f32);
+        snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
+        snapshot.restore();
+    }
+
+    /// Draws the given texture to the snapshot
+    fn draw_texture(snapshot: &gtk::Snapshot, texture: &Texture) {
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        snapshot.save();
+        snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
+        snapshot.restore();
+    }
+
+    /// Function called when the image needs to be redrawn. Creates a new snapshot, sets it up
+    /// according to all the current settings and sets the content to the current texture.
+    fn redraw(&self) {
+        let binding = &*self.imp().texture.borrow();
+        let texture = match binding {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        let rotation = &self.imp().rotation.borrow();
+        let (new_width, new_height) = match rotation.get_angle_degree() {
+            90 | 270 => (height, width),
+            _ => (width, height),
+        };
+
+        let snapshot = gtk::Snapshot::new();
+
+        Self::draw_rotation(&snapshot, width, height, rotation);
+
+        Self::draw_texture(&snapshot, texture);
+
+        if self.imp().grid.get() {
+            let monitor = self
+                .imp()
+                .monitor
+                .get()
+                .expect("Expected a monitor to be set");
+            let color = &self.imp().color.borrow().expect("Expected color to be set");
+            let line_width = self.imp().gridline_width.get();
+            Self::draw_grid(&snapshot, new_width, new_height, line_width, color, monitor);
+        }
+
+        let paintable = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+        self.imp().content.set_paintable(Some(&paintable));
+    }
+
+    /// Clear the media file and keep it alive to make sure it is cleared
+    fn disconnect_media(&self) {
+        if let Some(media) = self.imp().media_file.get() {
+            media.set_playing(false);
+            media.set_loop(false);
+            media.set_filename(None::<String>);
+            media.clear();
+        }
+    }
+
+    /// Emit an error message based on the input error
+    pub fn emit_error(&self, err: DragonDisplayError, fatal: bool) {
+        let msg = Report::from_error(err).to_string();
+        self.emit_by_name::<()>("error", &[&msg, &fatal]);
+    }
+
+    /// Signal emitted when an error occurs
+    pub fn connect_error<F: Fn(&Self, String, bool) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "error",
+            true,
+            glib::closure_local!(|window, msg, fatal| {
+                f(window, msg, fatal);
+            }),
+        )
     }
 }

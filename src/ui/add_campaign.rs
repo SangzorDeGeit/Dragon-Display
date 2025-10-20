@@ -1,32 +1,34 @@
 use adw::Application;
-use async_channel::Sender;
 use gtk::prelude::ObjectExt;
-use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use snafu::{ensure, OptionExt as _, Report, ResultExt};
 use std::env;
-use anyhow::{bail, Context, Result};
 
+use crate::campaign::DdCampaign;
 use crate::config::read_campaign_from_config;
-use crate::setup_manager::AddRemoveMessage;
+use crate::errors::{DragonDisplayError, IOSnafu, InvalidNameSnafu, InvalidPathSnafu, OtherSnafu};
 
 mod imp {
     use std::cell::RefCell;
     use std::env;
-    use std::io::{Error, ErrorKind};
     use std::rc::Rc;
+    use std::sync::OnceLock;
 
     use super::{valid_name, valid_path};
-    use async_channel::Sender;
     use glib::subclass::InitializingObject;
+    use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
     use gtk::{
         glib, template_callbacks, Button, CompositeTemplate, DropDown, Entry, FileChooserDialog,
         Label, Stack,
     };
     use gtk::{prelude::*, ResponseType};
+    use snafu::{OptionExt, ResultExt};
 
-    use crate::config::{Campaign, SynchronizationOption};
-    use crate::setup_manager::AddRemoveMessage;
+    use crate::campaign::DdCampaign;
+    use crate::config::SynchronizationOption;
+    use crate::errors::{IOSnafu, OtherSnafu};
+    use crate::try_emit;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -44,8 +46,6 @@ mod imp {
         pub finish_button: TemplateChild<Button>,
         pub campaign_name: RefCell<String>,
         pub path: Rc<RefCell<String>>,
-        pub sync_option: RefCell<SynchronizationOption>,
-        pub sender: RefCell<Option<Sender<AddRemoveMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -72,12 +72,8 @@ mod imp {
     impl AddCampaignWindow {
         #[template_callback]
         fn handle_cancel(&self, _: Button) {
-            self.sender
-                .borrow()
-                .clone()
-                .expect("No sender found")
-                .send_blocking(AddRemoveMessage::Cancel)
-                .expect("Channel closed");
+            let obj = self.obj();
+            obj.emit_by_name::<()>("cancel", &[]);
         }
 
         #[template_callback]
@@ -97,24 +93,10 @@ mod imp {
         #[template_callback]
         fn handle_next_page1(&self, _: Button) {
             let input = self.entry.text().to_string();
-            match valid_name(&input) {
-                Ok(_) => {
-                    self.campaign_name.replace(input);
-                    self.stack.set_visible_child_name("page2");
-                }
-                Err(e) => {
-                    self.sender
-                        .borrow()
-                        .clone()
-                        .expect("No sender found")
-                        .send_blocking(AddRemoveMessage::Error {
-                            error: e,
-                            fatal: false,
-                        })
-                        .expect("Channel closed");
-                    return;
-                }
-            }
+            let obj = self.obj();
+            try_emit!(obj, valid_name(&input), false);
+            self.campaign_name.replace(input);
+            self.stack.set_visible_child_name("page2");
         }
 
         #[template_callback]
@@ -122,16 +104,9 @@ mod imp {
             let sync_option = self.dropdown.selected();
             match sync_option {
                 0 => {
-                    self.sync_option.replace(SynchronizationOption::None);
                     self.finish_button.set_label("Finish");
                 }
                 _ => {
-                    self.sync_option
-                        .replace(SynchronizationOption::GoogleDrive {
-                            access_token: "".to_string(),
-                            refresh_token: "".to_string(),
-                            google_drive_sync_folder: "".to_string(),
-                        });
                     self.finish_button.set_label("Next");
                 }
             }
@@ -188,86 +163,72 @@ mod imp {
 
         #[template_callback]
         fn handle_default(&self, button: Button) {
-            let sender = self.sender.borrow().clone().expect("No sender found");
-            let working_dir = match env::current_dir() {
-                Ok(d) => d,
-                Err(_) => {
-                    sender
-                        .send_blocking(AddRemoveMessage::Error {
-                            error: Error::new(
-                                ErrorKind::PermissionDenied, 
-                                "Could not find current directory, please try to run again as administrator"
-                                ).into(),
-                                fatal: false,
-                        })
-                        .expect("Channel closed");
-                    return;
-                }
-            };
-            let working_dir = match working_dir.to_str() {
-                Some(d) => d,
-                None => {
-                    sender
-                        .send_blocking(AddRemoveMessage::Error {
-                            error: Error::new(
-                                ErrorKind::NotFound,
-                                "Could find the current directory",
-                            ).into(),
-                            fatal: false,
-                        })
-                        .expect("Channel closed");
-                    return;
-                }
-            };
+            let obj = self.obj();
+            let working_dir = try_emit!(
+                obj,
+                env::current_dir().context(IOSnafu {
+                    msg: "Could not get current working directory".to_owned()
+                }),
+                true
+            );
+            let working_dir = try_emit!(
+                obj,
+                working_dir.to_str().context(OtherSnafu {
+                    msg: { "Could not get current working directory".to_owned() }
+                }),
+                true
+            );
 
-            let default_path = format!("{}/{}", working_dir, self.entry.text().to_string());  
-            match valid_path(&default_path) {
-                Ok(_) => (),
-                Err(e) => {
-                    sender.send_blocking(AddRemoveMessage::Error { error: e, fatal: false })
-                        .expect("Channel closed");
-                    return;
-                },
-            }
+            let default_path = format!("{}/{}", working_dir, self.entry.text().to_string());
+            try_emit!(obj, valid_path(&default_path), false);
             self.path.replace(default_path);
             self.handle_finish(button);
         }
 
         #[template_callback]
         fn handle_finish(&self, _: Button) {
-            let sender = self.sender.borrow().clone().expect("No sender found");
+            let name = self.entry.text().to_string();
             let path = self.path.borrow().to_string();
-            match valid_path(&path) {
-                Ok(_) => (),
-                Err(e) => {
-                    sender.send_blocking(AddRemoveMessage::Error { 
-                        error: e, fatal: false })
-                        .expect("Channel closed");
-                    return;
-                },
-            }
-            let campaign = match self.dropdown.selected() {
-                0 => Campaign { 
-                    name: self.entry.text().to_string(), 
-                    path, 
-                    sync_option: SynchronizationOption::None },
-                1 => Campaign { 
-                    name: self.entry.text().to_string(), 
-                    path, 
-                    sync_option: SynchronizationOption::GoogleDrive { 
-                        access_token: "".to_string(), 
-                        refresh_token: "".to_string(), 
-                        google_drive_sync_folder: "".to_string() 
-                    }
-                },
+            let obj = self.obj();
+            try_emit!(obj, valid_path(&path), false);
+            match self.dropdown.selected() {
+                0 => {
+                    let campaign = DdCampaign::new(name, path, SynchronizationOption::None);
+                    obj.emit_by_name::<()>("campaign-none", &[&campaign]);
+                }
+                1 => {
+                    let sync_option = SynchronizationOption::GoogleDrive {
+                        access_token: "".to_string(),
+                        refresh_token: "".to_string(),
+                        google_drive_sync_folder: "".to_string(),
+                    };
+                    let campaign = DdCampaign::new(name, path, sync_option);
+                    obj.emit_by_name::<()>("campaign-gd", &[&campaign]);
+                }
                 _ => panic!("An invalid choice was made"),
             };
-            sender.send_blocking(AddRemoveMessage::Campaign { campaign }).expect("Channel closed");
         }
     }
 
     // Trait shared by all GObjects
     impl ObjectImpl for AddCampaignWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("cancel").build(),
+                    Signal::builder("campaign-gd")
+                        .param_types([DdCampaign::static_type()])
+                        .build(),
+                    Signal::builder("campaign-none")
+                        .param_types([DdCampaign::static_type()])
+                        .build(),
+                    Signal::builder("error")
+                        .param_types([String::static_type(), bool::static_type()])
+                        .build(),
+                ]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -292,13 +253,70 @@ glib::wrapper! {
 }
 
 impl AddCampaignWindow {
-    pub fn new(app: &Application, sender: Option<Sender<AddRemoveMessage>>) -> Self {
+    pub fn new(app: &Application) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
-        let imp = object.imp();
-        imp.sender.replace(sender);
         object.set_property("application", app);
         object
+    }
+
+    /// Emit an error message based on the input error
+    pub fn emit_error(&self, err: DragonDisplayError, fatal: bool) {
+        let msg = Report::from_error(err).to_string();
+        self.emit_by_name::<()>("error", &[&msg, &fatal]);
+    }
+
+    /// Signal emitted when the cancel button is clicked
+    pub fn connect_cancel<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "cancel",
+            true,
+            glib::closure_local!(|window| {
+                f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when a google drive campaign is added
+    pub fn connect_campaign_gd<F: Fn(&Self, DdCampaign) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "campaign-gd",
+            true,
+            glib::closure_local!(|window, campaign| {
+                f(window, campaign);
+            }),
+        )
+    }
+
+    /// Signal emitted when a no-sync campaign is added
+    pub fn connect_campaign_none<F: Fn(&Self, DdCampaign) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "campaign-none",
+            true,
+            glib::closure_local!(|window, campaign| {
+                f(window, campaign);
+            }),
+        )
+    }
+
+    /// Signal emitted when an error occures
+    pub fn connect_error<F: Fn(&Self, String, bool) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "error",
+            true,
+            glib::closure_local!(|window, msg, fatal| {
+                f(window, msg, fatal);
+            }),
+        )
     }
 }
 
@@ -310,15 +328,22 @@ const ALLOWED_CHARS: [char; 66] = [
 ];
 
 // Validate user input function for the campaign name
-pub fn valid_name(name: &str) -> Result<()> {
+pub fn valid_name(name: &str) -> Result<(), DragonDisplayError> {
     let trimmed_name = name.trim();
 
-    if trimmed_name.chars().all(char::is_whitespace) {
-        bail!("Input may not be all whitespace")     }
+    ensure!(
+        !trimmed_name.chars().all(char::is_whitespace),
+        InvalidNameSnafu {
+            msg: "input may not be all whitespace".to_owned()
+        }
+    );
 
-    if !trimmed_name.chars().all(|x| ALLOWED_CHARS.contains(&x)) {
-        bail!("Input contained invalid character")
-    }
+    ensure!(
+        trimmed_name.chars().all(|x| ALLOWED_CHARS.contains(&x)),
+        InvalidNameSnafu {
+            msg: "Input contained invalid character".to_owned()
+        }
+    );
 
     let campaign_list = read_campaign_from_config()?;
     if campaign_list.is_empty() {
@@ -326,26 +351,40 @@ pub fn valid_name(name: &str) -> Result<()> {
     }
 
     for campaign in campaign_list {
-        if campaign.name == trimmed_name {
-            bail!("Name already exists");
-        }
+        ensure!(
+            campaign.name != trimmed_name,
+            InvalidNameSnafu {
+                msg: "Name already exists"
+            }
+        );
     }
 
     Ok(())
 }
 
-pub fn valid_path(path: &str) -> Result<()> {
+pub fn valid_path(path: &str) -> Result<(), DragonDisplayError> {
     let campaign_list = read_campaign_from_config()?;
     for campaign in campaign_list {
-        if campaign.path == path {
-            bail!("Another campaign already uses this folder")
+        ensure!(
+            campaign.path != path,
+            InvalidPathSnafu {
+                msg: "Another campaign already uses this folder".to_owned()
+            }
+        );
+    }
+    let current_dir = env::current_dir().context(IOSnafu {
+        msg: "Could not get current working directory".to_owned(),
+    })?;
+    let current_dir_str = current_dir.to_str().context(OtherSnafu {
+        msg: "Could not get current working directory".to_owned(),
+    })?;
+    ensure!(
+        path != current_dir_str,
+        InvalidPathSnafu {
+            msg: "Cannot use the current working directory as a folder for campaign images"
+                .to_owned()
         }
-    }
-    let current_dir = env::current_dir()?;
-    let current_dir_str = current_dir.to_str().context("Could not convert current directory to a string")?;
-    if path == current_dir_str {
-        bail!("Cannot use the current working directory as a folder for campaign images")
-    }
+    );
 
     Ok(())
 }

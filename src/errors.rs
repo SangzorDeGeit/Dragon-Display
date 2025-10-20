@@ -1,41 +1,60 @@
-use thiserror::Error;
+use snafu::prelude::*;
 
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("The config file got corrupted. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    InvalidConfig,
-    #[error("Too many campaigns found in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    TooManyCampaigns,
-    #[error("Found a duplicate in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application")]
-    DuplicateCampaign,
-    #[error("Could not get permission to access the config file")]
-    PermissionDenied,
-    #[error("Could not find the campaign to be removed")]
-    CampaignNotFound,
-    #[error("Could not remove campaign folder: found non-media files")]
-    CouldNotRemove,
-    #[error("Could not create the folder to put the images in")]
-    FolderCreationError,
-    #[error("An internal error occurred")]
-    Other,
-}
-
-#[derive(Error, Debug)]
-pub enum GoogleDriveError {
-    #[error("The following files could not be downloaded {}", files.join(", "))]
-    DownloadFailed { files: Vec<String> },
-    #[error("Failed to connect to google drive")]
-    ConnectionFailed,
-    #[error("Google drive refused the connection")]
-    ConnectionRefused,
-    #[error("client_secret.json not found. In order to use google drive please follow the steps in the readme on github")]
-    ClientSecretNotFound,
-    #[error("Some uknown error happened while trying to read the client secret, follow the steps on the readme on github to configure google drive")]
-    ClientSecretError,
-    #[error("Did not have permission to read the client secret")]
-    PermissionDenied,
-    #[error("Could not remove file: {}", file)]
-    RemoveFile { file: String },
-    #[error("Internal error: called drive function for a non-google drive campaign")]
-    InternalError,
+#[derive(Debug, Snafu)]
+pub enum DragonDisplayError {
+    #[snafu(display("{}", msg), visibility(pub))]
+    ConnectionRefused {
+        source: std::boxed::Box<dyn serde::ser::StdError + std::marker::Send + Sync>,
+        msg: String,
+    },
+    #[snafu(display("Failed to send message to server"), visibility(pub))]
+    SendMessageError {
+        source: std::sync::mpsc::SendError<()>,
+    },
+    #[snafu(
+        display("Failed to send message from backend to manager"),
+        visibility(pub)
+    )]
+    SendBackendError {
+        source: async_channel::SendError<()>,
+    },
+    #[snafu(
+        display(
+            "There was a problem with the client secret. Follow this <a href=\"https://github.com/SangzorDeGeit/Dragon-Display/blob/main/README.md#using-google-drive\">link</a> for more info, or read the instructions on the readme for 'Using Google Drive'"
+        ),
+        visibility(pub)
+    )]
+    ClientSecretError { source: std::io::Error },
+    #[snafu(display("{}", msg), visibility(pub))]
+    IOError { source: std::io::Error, msg: String },
+    #[snafu(display("{}", msg), visibility(pub))]
+    RecvError {
+        source: std::sync::mpsc::RecvError,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
+    SerializeError {
+        source: toml::de::Error,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
+    ClientError {
+        source: google_drive::ClientError,
+        msg: String,
+    },
+    #[snafu(display("The inputted name is invalid: {}", msg), visibility(pub))]
+    InvalidName { msg: String },
+    #[snafu(display("Cannot use path: {}", msg), visibility(pub))]
+    InvalidPath { msg: String },
+    #[snafu(display("Address in use"), visibility(pub))]
+    AddressInUse,
+    #[snafu(display("{}", msg), visibility(pub))]
+    InvalidData { msg: String },
+    #[snafu(display("{}", msg), visibility(pub))]
+    GlibError {
+        source: gtk::glib::Error,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
+    Other { msg: String },
 }

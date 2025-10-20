@@ -1,24 +1,22 @@
 use std::path::PathBuf;
 
-use crate::config::IMAGE_EXTENSIONS;
-use crate::program_manager::ControlWindowMessage;
-use crate::widgets::thumbnail_image::DdThumbnailImage;
 use crate::APP_ID;
-use async_channel::Sender;
+use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{glib, Grid};
 use gtk::{prelude::*, ToggleButton};
 
+use super::thumbnail::{DdThumbnail, MediaType};
+
 mod imp {
-    use async_channel::Sender;
+    use gtk::glib::subclass::Signal;
     use std::cell::{Cell, RefCell};
+    use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, template_callbacks, Box, CompositeTemplate, Grid};
+    use gtk::{glib, template_callbacks, Box, CompositeTemplate, Grid, ToggleButton};
     use gtk::{prelude::*, Button};
-
-    use crate::program_manager::ControlWindowMessage;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -32,9 +30,10 @@ mod imp {
         pub next: TemplateChild<Button>,
         #[template_child]
         pub previous: TemplateChild<Button>,
+
+        pub togglebuttons: RefCell<Vec<ToggleButton>>,
         pub current_grid_nr: Cell<usize>,
         pub page_vec: RefCell<Vec<Grid>>,
-        pub sender: RefCell<Option<Sender<ControlWindowMessage>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -100,6 +99,15 @@ mod imp {
     }
     // Trait shared by all GObjects
     impl ObjectImpl for DdThumbnailGrid {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![Signal::builder("path")
+                    .param_types([String::static_type()])
+                    .build()]
+            })
+        }
+
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -124,18 +132,91 @@ glib::wrapper! {
 }
 
 impl DdThumbnailGrid {
-    pub fn new(sender: Sender<ControlWindowMessage>, files: Vec<PathBuf>) -> Self {
-        // set all properties
+    /// Create a new image grid
+    pub fn new(files: Vec<PathBuf>, t: &MediaType) -> Self {
         let object = glib::Object::new::<Self>();
-        let imp = object.imp();
-        imp.sender.replace(Some(sender));
-        Self::initialize(imp, files);
-
+        let mut prev_button: Option<ToggleButton> = None;
+        for file in files {
+            let thumbnail_image = DdThumbnail::new(&file, prev_button.as_ref(), t);
+            thumbnail_image.connect_clicked(clone!(@weak object => move |button| {
+                object.emit_by_name::<()>("path", &[&button.file()])
+            }));
+            object
+                .imp()
+                .togglebuttons
+                .borrow_mut()
+                .push(thumbnail_image.clone().into());
+            prev_button = Some(thumbnail_image.upcast::<ToggleButton>())
+        }
+        object.populate_grids();
         object
     }
 
-    fn initialize(imp: &imp::DdThumbnailGrid, files: Vec<PathBuf>) {
-        let sender = imp.sender.borrow().clone().expect("Sender not found");
+    /// Given a vector of paths to media files this function updates the buttons in the current
+    /// grid.
+    pub fn update(&self, images: Vec<PathBuf>, t: &MediaType) {
+        // Figure out which buttons can be kept, which need to be upated and how many new
+        let image_strings: Vec<String> = images
+            .iter()
+            .filter_map(|i| i.to_str())
+            .map(|i| i.to_string())
+            .collect();
+        let (keep, replace): (Vec<DdThumbnail>, Vec<DdThumbnail>) = self
+            .imp()
+            .togglebuttons
+            .take()
+            .into_iter()
+            .filter_map(|b| b.downcast::<DdThumbnail>().ok())
+            .partition(|b| image_strings.contains(&b.file()));
+        let keep_paths: Vec<String> = keep.iter().map(|b| b.file()).collect();
+        let new_images: Vec<PathBuf> = images
+            .into_iter()
+            .filter(|i| !keep_paths.contains(&i.to_str().expect("failed conversion").to_string()))
+            .collect();
+        let mut keep: Vec<ToggleButton> = keep
+            .into_iter()
+            .map(|k| k.upcast::<ToggleButton>())
+            .collect();
+
+        // no new images need to be added
+        if new_images.len() == 0 {
+            self.imp().togglebuttons.replace(keep);
+            self.populate_grids();
+            return;
+        }
+        // new images need to be added
+        // first go through all buttons that can be replaced
+        let mut i = 0;
+        for button in replace {
+            if let Some(new_path) = new_images.get(i) {
+                button.update(new_path);
+                keep.push(button.upcast::<ToggleButton>());
+                i += 1;
+            }
+        }
+        // if there are still new images needed create them
+        while let Some(new_path) = new_images.get(i) {
+            let prev_button = keep.last();
+            let thumbnail = DdThumbnail::new(new_path, prev_button, t);
+            thumbnail.connect_clicked(clone!(@weak self as obj => move |button| {
+                obj.emit_by_name::<()>("path", &[&button.file()])
+            }));
+            keep.push(thumbnail.upcast::<ToggleButton>());
+            i += 1;
+        }
+        self.imp().togglebuttons.replace(keep);
+        self.populate_grids();
+    }
+
+    /// Create an amount of grids for the given amount of storage needed and populate these grids
+    /// with the self.togglebuttons
+    pub fn populate_grids(&self) {
+        if let Some(child) = self.imp().main_box.first_child() {
+            if let Some(grid) = child.downcast_ref::<Grid>() {
+                self.imp().main_box.remove(grid);
+            }
+        }
+
         let settings = gtk::gio::Settings::new(APP_ID);
         let mut column = settings.int("imagegrid-column-amount");
         let mut row = settings.int("imagegrid-row-amount");
@@ -145,15 +226,12 @@ impl DdThumbnailGrid {
         if row <= 0 {
             row = 3;
         }
-        let file_amount = files.len() as f64;
+        let total_files = self.imp().togglebuttons.borrow().len() as f64;
         let files_per_page = (row * column) as f64;
-        // the amount of pages needed is the amount of files divided by the amount of files per
-        // page rounded up
-        let pages_needed = (file_amount / files_per_page).ceil() as i32;
-        let mut page_vec = Vec::new();
-        let mut prev_button: Option<&ToggleButton> = None;
-        for _ in 0..pages_needed {
-            let page = Grid::builder()
+        let grids_needed = (total_files / files_per_page).ceil() as usize;
+        let mut new_grids = Vec::new();
+        for _ in 0..grids_needed {
+            let grid = Grid::builder()
                 .halign(gtk::Align::Fill)
                 .valign(gtk::Align::Fill)
                 .hexpand(true)
@@ -161,60 +239,35 @@ impl DdThumbnailGrid {
                 .row_spacing(3)
                 .column_spacing(3)
                 .build();
-            page_vec.push(page);
+            new_grids.push(grid);
         }
-        // If there are no pages (in other words there are no files to display) remove prev and
-        // next and return
-        if let None = page_vec.get(0) {
-            imp.main_box.remove(
-                &imp.main_box
-                    .first_child()
-                    .expect("Did not find navigation buttons"),
-            );
-            return;
-        }
-        let mut filling_page = 0;
+        self.imp().page_vec.replace(Vec::new());
         let mut i = 0;
-        let mut thumbnail_image: DdThumbnailImage;
-        for file in files {
-            // the validity of th extension was already checked in control_window
-            let extension = file
-                .extension()
-                .expect("Could not get file extension")
-                .to_str()
-                .expect("Could not convert to str");
-            if IMAGE_EXTENSIONS.contains(&extension) {
-                thumbnail_image = DdThumbnailImage::new(&file, sender.clone(), prev_button);
-                let filling_grid = page_vec
-                    .get(filling_page)
-                    .expect("Not enough pages created");
-                thumbnail_image.set_halign(gtk::Align::Fill);
-                thumbnail_image.set_valign(gtk::Align::Fill);
-                thumbnail_image.set_hexpand(true);
-                thumbnail_image.set_vexpand(true);
-                prev_button = Some(thumbnail_image.get_togglebutton());
-                filling_grid.attach(&thumbnail_image, i % column, i / column, 1, 1);
-            } else {
-                continue;
-            }
+        for togglebutton in self.imp().togglebuttons.borrow().iter() {
+            let grid_nr = i / files_per_page as i32;
+            let grid = new_grids.get(grid_nr as usize).expect("Expected a grid");
+            grid.attach(togglebutton, i % column, (i / column) % row, 1, 1);
             i += 1;
-            if i % (files_per_page as i32) == 0 {
-                i = 0;
-                filling_page += 1;
-            }
         }
-        // Set the first page as the displayed page
-        imp.previous.set_sensitive(false);
-        imp.current_grid_nr.replace(0);
-        imp.main_box
-            .prepend(page_vec.get(0).expect("Could not find page"));
-        if page_vec.len() <= 1 {
-            imp.main_box.remove(
-                &imp.main_box
-                    .last_child()
-                    .expect("Did not find navigation box"),
-            );
+        if new_grids.len() <= 1 {
+            self.imp().navigation_box.set_child_visible(false);
         }
-        imp.page_vec.replace(page_vec);
+        self.imp().previous.set_sensitive(false);
+        self.imp().current_grid_nr.replace(0);
+        self.imp()
+            .main_box
+            .prepend(new_grids.get(0).expect("Expected a grid"));
+        self.imp().page_vec.replace(new_grids);
+    }
+
+    /// Signal emitted when an image is clicked
+    pub fn connect_path<F: Fn(&Self, String) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "path",
+            true,
+            glib::closure_local!(|window, path| {
+                f(window, path);
+            }),
+        )
     }
 }

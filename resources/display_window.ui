@@ -5,12 +5,12 @@
         <property name="title">Display</property>
         <property name="deletable">false</property>
         <child>
-            <object class="GtkBox" id="content">
+            <object class="GtkPicture" id="content">
                 <property name="halign">fill</property>
                 <property name="valign">fill</property>
                 <property name="vexpand">true</property>
                 <property name="hexpand">true</property>
-                <property name="orientation">vertical</property>
+                <property name="content-fit">contain</property>
             </object>
         </child>
     </template>

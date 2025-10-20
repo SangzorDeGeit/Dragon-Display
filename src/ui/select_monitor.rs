@@ -1,21 +1,20 @@
-use std::io::{Error, ErrorKind};
-
 use adw::Application;
-use async_channel::Sender;
 use gdk4::{Display, Monitor};
-use gtk::prelude::*;
+use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
+use gtk::{prelude::*, Button};
+use snafu::OptionExt;
 
-use crate::widgets::monitor_button::MonitorButton;
+use crate::errors::{DragonDisplayError, OtherSnafu};
 
 mod imp {
-    use std::cell::RefCell;
-    use std::io::Error;
+    use std::sync::OnceLock;
 
-    use async_channel::Sender;
     use gdk4::Monitor;
     use glib::subclass::InitializingObject;
+    use gtk::glib::subclass::Signal;
+    use gtk::prelude::StaticType;
     use gtk::subclass::prelude::*;
     use gtk::Grid;
     use gtk::{glib, CompositeTemplate};
@@ -26,7 +25,6 @@ mod imp {
     pub struct SelectMonitorWindow {
         #[template_child]
         pub monitor_grid: TemplateChild<Grid>,
-        pub sender: RefCell<Option<Sender<Result<Monitor, Error>>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -48,6 +46,14 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for SelectMonitorWindow {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![Signal::builder("monitor")
+                    .param_types([Monitor::static_type()])
+                    .build()]
+            })
+        }
         fn constructed(&self) {
             // Call "constructed" on parent
             self.parent_constructed();
@@ -72,42 +78,45 @@ glib::wrapper! {
 }
 
 impl SelectMonitorWindow {
-    pub fn new(app: &Application, sender: Sender<Result<Monitor, Error>>) -> Self {
+    pub fn new(app: &Application) -> Result<Self, DragonDisplayError> {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
-        let imp = object.imp();
-        imp.sender.replace(Some(sender));
-        Self::initialize(&imp);
-        object
-    }
-
-    /// this initialize function is called after the input variables for new() are set
-    fn initialize(imp: &imp::SelectMonitorWindow) {
-        let sender = imp.sender.borrow().clone().expect("No sender found");
-        let display = match Display::default() {
-            Some(d) => d,
-            None => {
-                sender
-                    .send_blocking(Err(Error::new(
-                        ErrorKind::NotFound,
-                        "Could not find a display",
-                    )))
-                    .expect("Channel closed");
-                return;
-            }
-        };
+        let display = Display::default().context(OtherSnafu {
+            msg: "Could not find a display".to_string(),
+        })?;
         let mut i = 0;
         while let Some(monitor) = display.monitors().item(i) {
             let monitor = monitor
                 .to_value()
                 .get::<Monitor>()
                 .expect("Value needs to be monitor");
-            let monitor_button = MonitorButton::new(monitor, sender.clone());
+
+            let label = format! {"{}cmx{}cm", monitor.width_mm()/10, monitor.height_mm()/10};
+            let button = Button::builder().label(label).build();
             let index = i as i32;
-            imp.monitor_grid
-                .attach(&monitor_button, index % 4, index / 4, 1, 1);
+            object
+                .imp()
+                .monitor_grid
+                .attach(&button, index % 4, index / 4, 1, 1);
+
+            button.connect_clicked(clone!(@weak object, @weak monitor => move |_| {
+                object.emit_by_name::<()>("monitor", &[&monitor]);
+            }));
+
             i += 1;
         }
+        Ok(object)
+    }
+
+    /// Signal emitted when monitor button is pressed
+    pub fn connect_monitor<F: Fn(&Self, Monitor) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "monitor",
+            true,
+            glib::closure_local!(|window, monitor| {
+                f(window, monitor);
+            }),
+        )
     }
 }

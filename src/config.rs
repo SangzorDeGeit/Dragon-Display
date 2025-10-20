@@ -1,7 +1,8 @@
+use crate::campaign::DdCampaign;
 // File containing functions that manage the config folder for campaign data
-use crate::errors::ConfigError;
-use anyhow::{bail, Context, Result};
+use crate::errors::*;
 use serde::{Deserialize, Serialize};
+use snafu::{prelude::*, ResultExt};
 use std::env;
 use std::fs::remove_dir_all;
 use std::{
@@ -10,7 +11,9 @@ use std::{
 };
 use toml::to_string;
 
-pub const IMAGE_EXTENSIONS: [&str; 6] = ["jpeg", "jpg", "png", "svg", "webp", "avif"];
+pub const IMAGE_EXTENSIONS: [&str; 3] = ["jpeg", "jpg", "png"];
+pub const VIDEO_EXTENSIONS: [&str; 2] = ["mp4", "webm"];
+pub const VTT_EXTENSIONS: [&str; 1] = ["uvtt"];
 pub const CAMPAIGN_MAX_CHAR_LENGTH: u16 = 25;
 pub const MAX_CAMPAIGN_AMOUNT: u16 = 10;
 pub const SYNCHRONIZATION_OPTIONS: [&str; 2] = ["None", "Google Drive"];
@@ -40,6 +43,14 @@ impl Campaign {
             name,
             path,
             sync_option: SynchronizationOption::None,
+        }
+    }
+
+    pub fn from(campaign: &DdCampaign) -> Self {
+        Self {
+            name: campaign.name(),
+            path: campaign.path(),
+            sync_option: campaign.sync_option(),
         }
     }
 
@@ -139,34 +150,36 @@ impl Default for SynchronizationOption {
 
 /// Tries to read the campaign configurations from the config file and puts them in a Vector.
 /// if there is no config file this method will return an empty vector
-pub fn read_campaign_from_config() -> Result<Vec<Campaign>> {
+pub fn read_campaign_from_config() -> Result<Vec<Campaign>, DragonDisplayError> {
     // We should return an empty vector if the config file is not found
     let mut file = match get_campaign_config(Operation::READ) {
         Ok(f) => f,
-        Err(e) => match e.kind() {
-            ErrorKind::NotFound => return Ok(Vec::new()),
-            _ => bail!(e.kind()),
-        },
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(DragonDisplayError::IOError {
+                source: e,
+                msg: "Could not read the config file".to_owned(),
+            })
+        }
     };
 
     let mut contents = String::new();
-    match file.read_to_string(&mut contents) {
-        Ok(_) => {}
-        Err(_) => bail!(ConfigError::InvalidConfig),
-    };
+    file.read_to_string(&mut contents).context(IOSnafu {
+        msg: "Could not read configuration file".to_owned(),
+    })?;
 
-    let config: Config = match toml::from_str(&contents) {
-        Ok(d) => d,
-        Err(_) => bail!(ConfigError::InvalidConfig),
-    };
-
+    let config: Config = toml::from_str(&contents).context(SerializeSnafu {
+        msg: "The config file got corrupted. Please remove the .config.toml file 
+            (a hidden file in this directory) and restart the application"
+            .to_owned(),
+    })?;
     check_integrity(&config)?;
 
     Ok(config.campaigns)
 }
 
-/// Given a hashmap with the campaign name as key and corresponding campaigndata as value, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
-pub fn write_campaign_to_config(campaign: Campaign) -> Result<()> {
+/// Given a Campaign, this function will try to write the campaign to the config file and create a directory in the campaign.path. This function will update the values if the name of the campaign already exists
+pub fn write_campaign_to_config(campaign: Campaign) -> Result<(), DragonDisplayError> {
     let config_item = Config {
         campaigns: vec![campaign.clone()],
     };
@@ -174,21 +187,36 @@ pub fn write_campaign_to_config(campaign: Campaign) -> Result<()> {
     if campaign_exists(&campaign)? {
         remove_campaign_from_config(campaign.clone(), false)?;
     }
-    let mut config_file = get_campaign_config(Operation::APPEND)?;
+    let mut config_file = get_campaign_config(Operation::APPEND).context(IOSnafu {
+        msg: "Could not open the campaign config file".to_owned(),
+    })?;
     let toml_string = to_string(&config_item).unwrap();
-    config_file.write_all(toml_string.as_bytes())?;
-    fs::create_dir_all(campaign.path)?;
+    config_file
+        .write_all(toml_string.as_bytes())
+        .context(IOSnafu {
+            msg: "Could not write to the campaign config file".to_owned(),
+        })?;
+    fs::create_dir_all(campaign.path).context(IOSnafu {
+        msg: "Could not create the folder to put the images in".to_owned(),
+    })?;
     Ok(())
 }
 
 /// Given an existing campaign name this function will remove this campaign and all the campaigndata from the config file.
-pub fn remove_campaign_from_config(campaign: Campaign, remove_folder: bool) -> Result<()> {
+pub fn remove_campaign_from_config(
+    campaign: Campaign,
+    remove_folder: bool,
+) -> Result<(), DragonDisplayError> {
     check_save_removal(&campaign.path)?;
     let campaign_list = read_campaign_from_config()?;
 
-    if campaign_list.len() == 0 {
-        bail!(ConfigError::CampaignNotFound);
-    }
+    ensure!(
+        campaign_list.len() > 0,
+        OtherSnafu {
+            msg: "Could not find the campaign to be removed".to_owned()
+        }
+    );
+
     if campaign_list.len() == 1 {
         if remove_folder {
             remove_dir_all(&campaign.path).unwrap_or(());
@@ -198,22 +226,28 @@ pub fn remove_campaign_from_config(campaign: Campaign, remove_folder: bool) -> R
 
     let mut new_campaign_list = Vec::from(campaign_list);
 
-    let index = match new_campaign_list
+    let index = new_campaign_list
         .iter()
         .position(|c| c.name == campaign.name)
-    {
-        Some(i) => i,
-        None => bail!(ConfigError::CampaignNotFound),
-    };
+        .context(OtherSnafu {
+            msg: "Could not find the campaign to be removed".to_owned(),
+        })?;
 
     new_campaign_list.swap_remove(index);
 
     let config_item = Config {
         campaigns: new_campaign_list,
     };
-    let mut config_file = get_campaign_config(Operation::WRITE)?;
-    let toml_string = to_string(&config_item).unwrap();
-    config_file.write_all(toml_string.as_bytes())?;
+    let mut config_file = get_campaign_config(Operation::WRITE).context(IOSnafu {
+        msg: "Could not open the campaign config file".to_owned(),
+    })?;
+    let toml_string =
+        to_string(&config_item).expect("Expected config item to be converted to string");
+    config_file
+        .write_all(toml_string.as_bytes())
+        .context(IOSnafu {
+            msg: "Could not write to the campaign config file".to_owned(),
+        })?;
     if remove_folder {
         remove_dir_all(&campaign.path).unwrap_or(());
     }
@@ -221,7 +255,7 @@ pub fn remove_campaign_from_config(campaign: Campaign, remove_folder: bool) -> R
 }
 
 /// Given a campaign, this function will return whether this campaign exists in the config file
-fn campaign_exists(campaign: &Campaign) -> Result<bool> {
+fn campaign_exists(campaign: &Campaign) -> Result<bool, DragonDisplayError> {
     let campaign_list = read_campaign_from_config()?;
     for c in campaign_list {
         if c.name == campaign.name {
@@ -252,27 +286,30 @@ fn get_campaign_config(operation: Operation) -> Result<File, io::Error> {
 }
 
 /// Tries to remove the campaign config file
-fn remove_campaign_config() -> Result<()> {
-    let mut path = env::current_dir()?;
+fn remove_campaign_config() -> Result<(), DragonDisplayError> {
+    let mut path = env::current_dir().context(IOSnafu {
+        msg: "Could not remove the campaign config file".to_owned(),
+    })?;
     path.push(".config.toml");
-    fs::remove_file(&path)?;
+    fs::remove_file(&path).context(IOSnafu {
+        msg: "Could not remove the campaign config file".to_owned(),
+    })?;
     Ok(())
 }
 
 /// Checks for the integrity of the config file.  
 /// Checks if there are no more campaigns in the file than MAX_CAMPAIGN_AMOUNT  
 /// Checks if there are no duplicate paths in the campaign folder
-fn check_integrity(config: &Config) -> Result<()> {
-    if config.campaigns.len() > usize::from(MAX_CAMPAIGN_AMOUNT) {
-        bail!(ConfigError::TooManyCampaigns);
-    }
+fn check_integrity(config: &Config) -> Result<(), DragonDisplayError> {
+    ensure!(
+        config.campaigns.len() <= usize::from(MAX_CAMPAIGN_AMOUNT),
+        OtherSnafu {msg: "Too many campaigns found in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application".to_owned()}
+    );
 
     let mut path_names = Vec::new();
     for campaign in &config.campaigns {
         let path = &campaign.path;
-        if path_names.contains(&path) {
-            bail!(ConfigError::DuplicateCampaign);
-        }
+        ensure!(!path_names.contains(&path), OtherSnafu {msg: "Found a duplicate in the config file. Please remove the .config.toml file (a hidden file in this directory) and restart the application".to_owned()});
         path_names.push(path);
     }
 
@@ -280,30 +317,39 @@ fn check_integrity(config: &Config) -> Result<()> {
 }
 
 /// Check if there only image files in the folder of the campaign to be removed
-fn check_save_removal(campaign_path: &str) -> Result<()> {
+fn check_save_removal(campaign_path: &str) -> Result<(), DragonDisplayError> {
     let files = match fs::read_dir(&campaign_path) {
         Ok(f) => f,
-        Err(e) => match e.kind() {
-            ErrorKind::NotFound => return Ok(()),
-            ErrorKind::PermissionDenied => bail!(ConfigError::PermissionDenied),
-            _ => bail!(ConfigError::Other),
-        },
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            return Err(DragonDisplayError::IOError {
+                source: e,
+                msg: "Could not read the campaign path".to_owned(),
+            })
+        }
     };
 
     for file in files {
-        let file_path = file?.path();
+        let file_path = file
+            .context(IOSnafu {
+                msg: "Could not read the campaign path".to_owned(),
+            })?
+            .path();
 
-        let extension_os = file_path
-            .extension()
-            .context("Could not get file extensions")?;
+        let extension_os = file_path.extension().context(OtherSnafu {
+            msg: "Could not get file extension".to_owned(),
+        })?;
 
-        let extension = extension_os
-            .to_str()
-            .context("Could not convert file types into strings")?;
+        let extension = extension_os.to_str().context(OtherSnafu {
+            msg: "Some internal error occured while reading file extensions",
+        })?;
 
-        if !IMAGE_EXTENSIONS.contains(&extension) {
-            bail!(ConfigError::CouldNotRemove);
-        }
+        ensure!(
+            IMAGE_EXTENSIONS.contains(&extension),
+            OtherSnafu {
+                msg: "Could not remove the campaign".to_owned()
+            }
+        );
     }
 
     Ok(())

@@ -26,11 +26,19 @@
                             </object>
                         </child>
                         <child>
-                            <object class="GtkButton">
+                            <object class="GtkButton" id="options_button">
                                 <property name="label">Options</property>
                                 <property name="halign">fill</property>
                                 <property name="hexpand">true</property>
                                 <signal name="clicked" handler="handle_options" swapped="true" />
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton">
+                                <property name="label">Reset display</property>
+                                <property name="halign">fill</property>
+                                <property name="hexpand">true</property>
+                                <signal name="clicked" handler="handle_reset_display" swapped="true" />
                             </object>
                         </child>
                     </object>
@@ -53,7 +61,87 @@
                                 <property name="name">images</property>
                                 <property name="title">Images</property>
                                 <property name="child">
-                                    <object class="GtkBox" id="images">
+                                    <object class="GtkBox">
+                                        <property name="orientation">horizontal</property>
+                                        <property name="halign">fill</property>
+                                        <property name="valign">fill</property>
+                                        <property name="hexpand">true</property>
+                                        <property name="vexpand">true</property>
+                                        <child>
+                                            <object class="GtkBox">
+                                                <property name="orientation">vertical</property>
+                                                <property name="halign">fill</property>
+                                                <property name="valign">fill</property>
+                                                <property name="hexpand">true</property>
+                                                <property name="vexpand">true</property>
+                                                <child>
+                                                    <object class="GtkButton">
+                                                        <property name="label">Rotate 90</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="clicked"
+                                                            handler="handle_rotate90" swapped="true" />
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkButton">
+                                                        <property name="label">Rotate 180</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="clicked"
+                                                            handler="handle_rotate180"
+                                                            swapped="true" />
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkButton">
+                                                        <property name="label">Rotate 270</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="clicked"
+                                                            handler="handle_rotate270"
+                                                            swapped="true" />
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkToggleButton">
+                                                        <property name="label">Fit to size</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="toggled" handler="handle_fit"
+                                                            swapped="true" />
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkToggleButton">
+                                                        <property name="label">Apply grid</property>
+                                                        <property name="halign">fill</property>
+                                                        <property name="hexpand">true</property>
+                                                        <signal name="toggled" handler="handle_grid"
+                                                            swapped="true" />
+                                                    </object>
+                                                </child>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="GtkBox" id="images">
+                                                <property name="orientation">horizontal</property>
+                                                <property name="halign">fill</property>
+                                                <property name="valign">fill</property>
+                                                <property name="hexpand">true</property>
+                                                <property name="vexpand">true</property>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkStackPage">
+                                <property name="name">videos</property>
+                                <property name="title">Videos</property>
+                                <property name="child">
+                                    <object class="GtkBox" id="videos">
                                         <property name="halign">fill</property>
                                         <property name="valign">fill</property>
                                         <property name="hexpand">true</property>
