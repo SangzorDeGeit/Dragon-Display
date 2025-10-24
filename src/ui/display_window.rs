@@ -43,7 +43,7 @@ mod imp {
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, Button, CompositeTemplate, MediaFile};
+    use gtk::{glib, CompositeTemplate, MediaFile};
     use gtk::{prelude::*, Picture};
 
     // Object holding the state
@@ -71,8 +71,6 @@ mod imp {
         type ParentType = gtk::ApplicationWindow;
 
         fn class_init(klass: &mut Self::Class) {
-            Button::ensure_type();
-
             klass.bind_template();
         }
 

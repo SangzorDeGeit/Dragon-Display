@@ -18,5 +18,6 @@
         <file compressed="true" preprocess="xml-stripblanks">thumbnail.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">display_window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">options.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">vtt_area.ui</file>
     </gresource>
 </gresources>

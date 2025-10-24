@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<interface>
+    <template class="DdVttArea" parent="GtkWidget">
+        <property name="halign">fill</property>
+        <property name="valign">fill</property>
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <child>
+            <object class="GtkPicture" id="image">
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="content-fit">fill</property>
+            </object>
+        </child>
+    </template>
+</interface>

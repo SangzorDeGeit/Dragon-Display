@@ -1,5 +1,7 @@
+use std::cell::Cell;
 use std::fs::read_dir;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -12,6 +14,7 @@ use crate::config::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, VTT_EXTENSIONS};
 use crate::errors::*;
 use crate::widgets::thumbnail::MediaType;
 use crate::widgets::thumbnail_grid::DdThumbnailGrid;
+use crate::widgets::vtt_area::DdVttArea;
 
 mod imp {
 
@@ -196,6 +199,28 @@ impl DdControlWindow {
         }
         // get all vtts from the folder
         // setup the vtt grid
+        let vtt_area = DdVttArea::new();
+        object.imp().vtts.append(&vtt_area);
+        let pressed = Rc::new(Cell::new(0));
+
+        vtt_area.connect_pressed(clone!(@strong pressed => move |_, n, x, y| {
+            pressed.set(n);
+        }));
+
+        vtt_area.connect_stopped(clone!(@strong pressed => move |_| {
+            if pressed.get() > 0 {
+                println!("long press");
+                pressed.set(pressed.get()+1);
+            }
+        }));
+        vtt_area.connect_released(clone!(@strong pressed => move |_, n| {
+            let old_n = pressed.get();
+            if n == old_n {
+                println!("short press");
+            }
+            pressed.set(0);
+        }));
+
         if videos.len() == 0 {
             let label = Label::builder()
                 .label("You have no videos")

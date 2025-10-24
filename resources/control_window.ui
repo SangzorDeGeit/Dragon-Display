@@ -160,15 +160,6 @@
                                         <property name="valign">fill</property>
                                         <property name="hexpand">true</property>
                                         <property name="vexpand">true</property>
-                                        <child>
-                                            <object class="GtkLabel">
-                                                <property name="label">to be implemented</property>
-                                                <property name="halign">center</property>
-                                                <property name="valign">center</property>
-                                                <property name="hexpand">true</property>
-                                                <property name="vexpand">true</property>
-                                            </object>
-                                        </child>
                                     </object>
                                 </property>
                             </object>
