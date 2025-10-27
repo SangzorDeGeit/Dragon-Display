@@ -1,4 +1,5 @@
 use gdk4::{Monitor, Texture, RGBA};
+use gtk::gdk_pixbuf::Colorspace;
 use gtk::gdk_pixbuf::Pixbuf;
 use gtk::glib::clone;
 use gtk::graphene::{Point, Rect, Size};
@@ -9,7 +10,6 @@ use snafu::{OptionExt, Report};
 
 use crate::errors::{DragonDisplayError, OtherSnafu};
 use crate::videopipeline::VideoPipeline;
-use crate::widgets::video::DdVideoPipeline;
 use crate::{try_emit, APP_ID};
 
 use super::options::ColorPreset;
@@ -217,15 +217,15 @@ impl DdDisplayWindow {
         let (sender, receiver) = async_channel::unbounded();
         self.disconnect_media();
 
-        
         let mut borrow = self.imp().pipeline.borrow_mut();
         let pipeline = borrow.as_mut().expect("No pipeline found");
 
         let (width, height) = pipeline.play_video(&path_to_video, sender);
-        let stride = width*3;
-        pipeline.connect_frame(receiver, 
+        let stride = width * 3;
+        VideoPipeline::connect_frame(
+            receiver,
             clone!(@weak self as obj => move |frame| {
-                let pixbuf = Pixbuf::from_mut_slice(frame, gtk::gdk_pixbuf::Colorspace::Rgb, false, 8, width, height, stride);
+                let pixbuf = Pixbuf::from_mut_slice(frame, Colorspace::Rgb, false, 8, width, height, stride);
                 obj.imp().content.set_pixbuf(Some(&pixbuf));
             }),
         );

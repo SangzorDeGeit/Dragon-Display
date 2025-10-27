@@ -45,8 +45,6 @@ mod imp {
         type Type = super::DdThumbnailGrid;
 
         fn class_init(klass: &mut Self::Class) {
-            Button::ensure_type();
-
             klass.bind_template();
             klass.set_layout_manager_type::<gtk::BoxLayout>();
             klass.bind_template_callbacks();

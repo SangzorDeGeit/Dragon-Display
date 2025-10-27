@@ -38,7 +38,6 @@ impl VideoPipeline {
         let caps = Caps::builder("video/x-raw").field("format", &"RGB").build();
         let appsink = ElementFactory::make("appsink")
             .property("caps", caps)
-            .property("emit_signals", &true)
             .property("max_buffers", &1u32)
             .property("drop", &true)
             .build()
@@ -92,15 +91,17 @@ impl VideoPipeline {
 
         runtime().spawn(async move {
             loop {
-                if let Some(sample) = appsink.try_pull_sample(ClockTime::from_useconds(100)) {
-                    let buffer = sample.buffer().expect("Could not get sample buffer");
-                    let data = buffer
-                        .map_readable()
-                        .expect("Could not get map")
-                        .as_slice()
-                        .to_vec();
-                    if let Err(_) = sender.send(data).await {
-                        break;
+                if !appsink.is_eos() {
+                    if let Some(sample) = appsink.try_pull_sample(ClockTime::from_useconds(100)) {
+                        let buffer = sample.buffer().expect("Could not get sample buffer");
+                        let data = buffer
+                            .map_readable()
+                            .expect("Could not get map")
+                            .as_slice()
+                            .to_vec();
+                        if let Err(_) = sender.send(data).await {
+                            break;
+                        }
                     }
                 } else {
                     let seek_event = gstreamer::event::Seek::new(
@@ -161,7 +162,7 @@ impl VideoPipeline {
     }
 
     /// Connect to the sender that sends frames
-    pub fn connect_frame<F: Fn(Vec<u8>) + 'static>(&self, receiver: Receiver<Vec<u8>>, f: F) {
+    pub fn connect_frame<F: Fn(Vec<u8>) + 'static>(receiver: Receiver<Vec<u8>>, f: F) {
         spawn_future_local(async move {
             while let Ok(frame) = receiver.recv().await {
                 f(frame)

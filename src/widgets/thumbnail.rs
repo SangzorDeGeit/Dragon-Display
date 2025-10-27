@@ -9,8 +9,6 @@ use std::path::PathBuf;
 
 use gtk::subclass::prelude::*;
 
-use super::video::DdVideoPipeline;
-
 pub enum MediaType {
     Image,
     Video,
@@ -98,13 +96,14 @@ impl DdThumbnail {
             MediaType::Image => {
                 let image = Texture::from_filename(&file_path).expect("Expected an image");
                 imp.icon.set_paintable(Some(&image));
+                imp.label.set_text(file_name);
             }
             MediaType::Video => {
-                object.set_video_frame(&file_path);
+                let markup = format!("<span font=\"30\">{}</span>", &file_name);
+                imp.label.set_label(&markup);
             }
         }
         imp.icon.set_content_fit(gtk::ContentFit::Fill);
-        imp.label.set_text(file_name);
         imp.path.replace(Some(file_path));
 
         object.set_group(prev_button);
@@ -133,10 +132,5 @@ impl DdThumbnail {
         self.imp().icon.set_file(Some(&file));
         self.imp().label.set_text(file_name);
         self.imp().path.replace(Some(file_path));
-    }
-
-    fn set_video_frame(&self, path_to_file: &String) {
-        let pixbuf = DdVideoPipeline::thumbnail(path_to_file.as_str());
-        self.imp().icon.set_pixbuf(Some(&pixbuf));
     }
 }
