@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
-use gtk::glib::clone;
 //GUI crates
+use gtk::glib::clone;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -13,6 +13,7 @@ pub mod gd_client;
 pub mod program;
 pub mod setup;
 pub mod ui;
+pub mod videopipeline;
 pub mod widgets;
 
 use setup::DragonDisplaySetup;
@@ -50,13 +51,15 @@ fn main() -> glib::ExitCode {
 
     let setup = DragonDisplaySetup::new();
 
-    app.connect_activate(clone!(@weak setup => move |app| {
-        setup.select_window(&app);
-    }));
+    app.connect_activate(clone!( @weak setup => move |app| {
+            setup.select_window(&app);
+        }
+    ));
 
-    setup.connect_error(clone!(@weak app => move |_, msg, fatal| {
-        ErrorDialog::new(&app, msg, fatal).present();
-    }));
+    setup.connect_error(clone!( @weak app => move |_, msg, fatal| {
+            ErrorDialog::new(&app, msg, fatal).present();
+        }
+    ));
 
     app.run()
 }

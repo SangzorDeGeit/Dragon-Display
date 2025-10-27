@@ -1,14 +1,15 @@
 use gdk4::Texture;
 use gtk::{
     gio::File,
-    glib::{self, clone, spawn_future_local, timeout_future_seconds},
+    glib::{self},
     subclass::prelude::{ObjectSubclass, ObjectSubclassIsExt},
-    MediaFile,
 };
 use gtk::{prelude::*, ToggleButton};
 use std::path::PathBuf;
 
 use gtk::subclass::prelude::*;
+
+use super::video::DdVideoPipeline;
 
 pub enum MediaType {
     Image,
@@ -135,19 +136,7 @@ impl DdThumbnail {
     }
 
     fn set_video_frame(&self, path_to_file: &String) {
-        let file = MediaFile::for_filename(path_to_file);
-        file.set_playing(true);
-
-        spawn_future_local(clone!(@weak self as obj => async move {
-            while !file.is_prepared() {
-                timeout_future_seconds(1).await;
-            }
-            let image = file.current_image();
-            file.set_filename(None::<&String>);
-            obj.imp().icon.set_paintable(Some(&image));
-            while file.is_playing() || file.has_video() {
-                timeout_future_seconds(1).await;
-            }
-        }));
+        let pixbuf = DdVideoPipeline::thumbnail(path_to_file.as_str());
+        self.imp().icon.set_pixbuf(Some(&pixbuf));
     }
 }

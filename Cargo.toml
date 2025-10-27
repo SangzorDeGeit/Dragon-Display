@@ -19,6 +19,8 @@ unicode-segmentation = "1.10.1"
 gtk = { version = "0.8.1", package = "gtk4", features = ["v4_8"] }
 gdk4 = "0.8.1"
 adw = { version = "0.6", package = "libadwaita", features = ["v1_2"] }
+gstreamer = "0.24"
+gstreamer-app = "0.24"
 futures = "0.3.29"
 async-channel = "2.3.1"
 async-recursion = "1.1.1"

@@ -1,4 +1,6 @@
 use gdk4::{Monitor, Texture, RGBA};
+use gtk::gdk_pixbuf::Pixbuf;
+use gtk::glib::clone;
 use gtk::graphene::{Point, Rect, Size};
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -6,6 +8,8 @@ use gtk::{gio, glib, MediaFile};
 use snafu::{OptionExt, Report};
 
 use crate::errors::{DragonDisplayError, OtherSnafu};
+use crate::videopipeline::VideoPipeline;
+use crate::widgets::video::DdVideoPipeline;
 use crate::{try_emit, APP_ID};
 
 use super::options::ColorPreset;
@@ -36,6 +40,7 @@ impl Default for Rotation {
 mod imp {
 
     use crate::ui::display_window::Rotation;
+    use crate::videopipeline::VideoPipeline;
     use std::cell::{Cell, OnceCell, RefCell};
     use std::sync::OnceLock;
 
@@ -60,6 +65,7 @@ mod imp {
         pub monitor: OnceCell<Monitor>,
         pub color: RefCell<Option<RGBA>>,
         pub gridline_width: Cell<f32>,
+        pub pipeline: RefCell<Option<VideoPipeline>>,
     }
 
     // The central trait for subclassing a GObject
@@ -133,6 +139,8 @@ impl DdDisplayWindow {
 
         let gridline_width = settings.double("grid-line-width") as f32;
         object.imp().gridline_width.set(gridline_width);
+        let video_pipeline = VideoPipeline::new();
+        object.imp().pipeline.replace(Some(video_pipeline));
 
         object
     }
@@ -206,18 +214,21 @@ impl DdDisplayWindow {
 
     /// Set the content of the display window to a video
     pub fn set_video(&self, path_to_video: String) {
+        let (sender, receiver) = async_channel::unbounded();
         self.disconnect_media();
-        self.imp().texture.replace(None);
-        let media_file = self
-            .imp()
-            .media_file
-            .get()
-            .expect("Expected media file to be set");
-        media_file.set_filename(Some(&path_to_video));
-        media_file.play();
-        media_file.set_loop(true);
-        media_file.set_muted(true);
-        self.imp().content.set_paintable(Some(media_file));
+
+        
+        let mut borrow = self.imp().pipeline.borrow_mut();
+        let pipeline = borrow.as_mut().expect("No pipeline found");
+
+        let (width, height) = pipeline.play_video(&path_to_video, sender);
+        let stride = width*3;
+        pipeline.connect_frame(receiver, 
+            clone!(@weak self as obj => move |frame| {
+                let pixbuf = Pixbuf::from_mut_slice(frame, gtk::gdk_pixbuf::Colorspace::Rgb, false, 8, width, height, stride);
+                obj.imp().content.set_pixbuf(Some(&pixbuf));
+            }),
+        );
     }
 
     /// Toggle the content fit of the image, if there is no picture it will update the value but
@@ -365,12 +376,9 @@ impl DdDisplayWindow {
 
     /// Clear the media file and keep it alive to make sure it is cleared
     fn disconnect_media(&self) {
-        if let Some(media) = self.imp().media_file.get() {
-            media.set_playing(false);
-            media.set_loop(false);
-            media.set_filename(None::<String>);
-            media.clear();
-        }
+        let borrow = self.imp().pipeline.borrow_mut();
+        let pipeline = borrow.as_ref().expect("Expected a pipeline");
+        pipeline.stop_video();
     }
 
     /// Emit an error message based on the input error

@@ -202,24 +202,36 @@ impl DdControlWindow {
         let vtt_area = DdVttArea::new();
         object.imp().vtts.append(&vtt_area);
         let pressed = Rc::new(Cell::new(0));
+        let xcoord = Rc::new(Cell::new(0.));
+        let ycoord = Rc::new(Cell::new(0.));
 
-        vtt_area.connect_pressed(clone!(@strong pressed => move |_, n, x, y| {
-            pressed.set(n);
-        }));
+        vtt_area.connect_pressed(
+            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_, n, x, y| {
+                pressed.set(n);
+                xcoord.set(x);
+                ycoord.set(y);
+            }),
+        );
 
-        vtt_area.connect_stopped(clone!(@strong pressed => move |_| {
-            if pressed.get() > 0 {
-                println!("long press");
-                pressed.set(pressed.get()+1);
-            }
-        }));
-        vtt_area.connect_released(clone!(@strong pressed => move |_, n| {
-            let old_n = pressed.get();
-            if n == old_n {
-                println!("short press");
-            }
-            pressed.set(0);
-        }));
+        vtt_area.connect_stopped(
+            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_| {
+                if pressed.get() > 0 {
+                    println!("long press");
+                    println!("{},{}",xcoord.get(), ycoord.get());
+                    pressed.set(pressed.get()+1);
+                }
+            }),
+        );
+        vtt_area.connect_released(
+            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_, n| {
+                let old_n = pressed.get();
+                if n == old_n {
+                    println!("short press");
+                    println!("{},{}",xcoord.get(), ycoord.get());
+                }
+                pressed.set(0);
+            }),
+        );
 
         if videos.len() == 0 {
             let label = Label::builder()
