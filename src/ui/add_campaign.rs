@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::prelude::ObjectExt;
 use gtk::{gio, glib};
 use snafu::{ensure, OptionExt as _, Report, ResultExt};
@@ -253,7 +252,7 @@ glib::wrapper! {
 }
 
 impl AddCampaignWindow {
-    pub fn new(app: &Application) -> Self {
+    pub fn new(app: &gtk::Application) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

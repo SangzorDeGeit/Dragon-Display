@@ -167,7 +167,7 @@ glib::wrapper! {
 }
 
 impl DdControlWindow {
-    pub fn new(app: &adw::Application, campaign_path: String) -> Result<Self, DragonDisplayError> {
+    pub fn new(app: &gtk::Application, campaign_path: String) -> Result<Self, DragonDisplayError> {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_application(Some(app));

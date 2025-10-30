@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::glib::clone;
 use gtk::prelude::ObjectExt;
 use gtk::prelude::*;
@@ -109,7 +108,7 @@ glib::wrapper! {
 }
 
 impl DdGoogleFolderSelectWindow {
-    pub fn new(app: &Application, folders: Vec<GoogleFolderObject>) -> Self {
+    pub fn new(app: &gtk::Application, folders: Vec<GoogleFolderObject>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

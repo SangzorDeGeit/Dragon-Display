@@ -1,6 +1,5 @@
 use std::cell::Cell;
 
-use adw::Application;
 use gdk4::builders::RGBABuilder;
 use gdk4::RGBA;
 use gtk::glib::clone;
@@ -167,7 +166,7 @@ glib::wrapper! {
 }
 
 impl DdOptionsWindow {
-    pub fn new(app: &Application) -> Self {
+    pub fn new(app: &gtk::Application) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

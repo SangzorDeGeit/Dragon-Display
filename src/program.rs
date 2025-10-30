@@ -55,7 +55,7 @@ impl DragonDisplayProgram {
         obj
     }
 
-    pub fn run(&self, app: &adw::Application, monitor: &Monitor, campaign: String) {
+    pub fn run(&self, app: &gtk::Application, monitor: &Monitor, campaign: String) {
         let control_window = try_emit!(self, DdControlWindow::new(app, campaign), true);
         let display_window = DdDisplayWindow::new(monitor);
         control_window.present();
@@ -144,7 +144,7 @@ impl DragonDisplayProgram {
         );
     }
 
-    fn present_options(&self, app: &adw::Application) {
+    fn present_options(&self, app: &gtk::Application) {
         let options_window = DdOptionsWindow::new(app);
 
         options_window.connect_confirm(clone!(@weak self as obj => move |window| {

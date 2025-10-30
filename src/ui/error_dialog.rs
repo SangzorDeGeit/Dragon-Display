@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::prelude::GtkWindowExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
@@ -18,7 +17,7 @@ mod imp {
         #[template_child]
         pub message_label: TemplateChild<Label>,
         pub fatal: OnceCell<bool>,
-        pub app: OnceCell<adw::Application>,
+        pub app: OnceCell<gtk::Application>,
     }
 
     // The central trait for subclassing a GObject
@@ -80,7 +79,7 @@ glib::wrapper! {
 
 impl ErrorDialog {
     /// Create a new modal error dialog
-    pub fn new(app: &Application, msg: String, fatal: bool) -> Self {
+    pub fn new(app: &gtk::Application, msg: String, fatal: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_modal(fatal);

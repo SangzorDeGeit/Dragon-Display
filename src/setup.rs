@@ -150,7 +150,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the select window
-    pub fn select_window(&self, app: &adw::Application) {
+    pub fn select_window(&self, app: &gtk::Application) {
         let campaign_list = try_emit!(self, read_campaign_from_config(), true);
         let window = SelectCampaignWindow::new(app, campaign_list);
 
@@ -180,7 +180,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the remove window
-    pub fn remove_window(&self, app: &adw::Application) {
+    pub fn remove_window(&self, app: &gtk::Application) {
         let campaign_list = try_emit!(self, read_campaign_from_config(), true);
         if campaign_list.is_empty() {
             self.select_window(app);
@@ -205,7 +205,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the remove confirmation window
-    pub fn remove_confirm_window(&self, app: &adw::Application) {
+    pub fn remove_confirm_window(&self, app: &gtk::Application) {
         let window = RemoveConfirmWindow::new(&app, &self.imp().campaign.borrow());
 
         window.connect_no(clone!(@weak self as obj, @weak app => move |window| {
@@ -224,7 +224,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the add campaign window
-    pub fn add_window(&self, app: &adw::Application) {
+    pub fn add_window(&self, app: &gtk::Application) {
         let window = AddCampaignWindow::new(app);
 
         window.connect_cancel(clone!(@weak self as obj, @weak app => move |window| {
@@ -257,7 +257,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the google drive connect window
-    pub fn googledrive_connect(&self, app: &adw::Application, callfn: GDConnectCallingFn) {
+    pub fn googledrive_connect(&self, app: &gtk::Application, callfn: GDConnectCallingFn) {
         let reconnect = match &callfn {
             GDConnectCallingFn::Add => false,
             _ => true,
@@ -310,7 +310,7 @@ impl DragonDisplaySetup {
 
     /// Create and present the google drive load folders, a progress bar for loading all folders in
     /// the target drive
-    pub fn googledrive_loadfolders(&self, app: &adw::Application) {
+    pub fn googledrive_loadfolders(&self, app: &gtk::Application) {
         let progbar = DdProgressBar::new("Indexing google drive folders".to_string());
         let window = Window::builder().application(app).child(&progbar).build();
         let new_folders: Rc<RefCell<Vec<GoogleFolderObject>>> = Rc::new(RefCell::new(Vec::new()));
@@ -388,7 +388,7 @@ impl DragonDisplaySetup {
     }
 
     /// Create and present the google drive select folder window
-    pub fn googledrive_selectfolder(&self, app: &adw::Application) {
+    pub fn googledrive_selectfolder(&self, app: &gtk::Application) {
         let folders = self.imp().gd_client_state.borrow().indexed_folders();
         let window = DdGoogleFolderSelectWindow::new(app, folders);
         self.imp().gd_client_state.replace(GdClientState::General);
@@ -414,7 +414,7 @@ impl DragonDisplaySetup {
     }
 
     /// Synchronize a googledrive campaign
-    pub fn googledrive_synchronize(&self, app: &adw::Application) {
+    pub fn googledrive_synchronize(&self, app: &gtk::Application) {
         let progbar = DdProgressBar::new("Synchronizing files with google drive".to_string());
         let window = Window::builder().application(app).child(&progbar).build();
         let new_downloads: Rc<RefCell<Vec<(String, String)>>> = Rc::new(RefCell::new(Vec::new()));
@@ -523,7 +523,7 @@ impl DragonDisplaySetup {
     }
 
     /// Present the window to select a monitor
-    pub fn monitor_window(&self, app: &adw::Application) {
+    pub fn monitor_window(&self, app: &gtk::Application) {
         let window = try_emit!(self, SelectMonitorWindow::new(&app), true);
 
         window.connect_monitor(
@@ -539,7 +539,7 @@ impl DragonDisplaySetup {
 
     /// This starts a new manager that will manage the two screens (control and display window)
     /// This manager keeps existing to handle possible refresh requests
-    pub fn start_program(&self, app: &adw::Application) {
+    pub fn start_program(&self, app: &gtk::Application) {
         let dragon_display = DragonDisplayProgram::new();
 
         dragon_display.run(

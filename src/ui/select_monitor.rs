@@ -1,4 +1,3 @@
-use adw::Application;
 use gdk4::{Display, Monitor};
 use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -78,7 +77,7 @@ glib::wrapper! {
 }
 
 impl SelectMonitorWindow {
-    pub fn new(app: &Application) -> Result<Self, DragonDisplayError> {
+    pub fn new(app: &gtk::Application) -> Result<Self, DragonDisplayError> {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

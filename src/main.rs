@@ -47,7 +47,7 @@ fn main() -> glib::ExitCode {
     //register resources
     gio::resources_register_include!("dragon_display.gresource")
         .expect("Failed to register resources");
-    let app: adw::Application = adw::Application::builder().application_id(APP_ID).build();
+    let app: gtk::Application = gtk::Application::builder().application_id(APP_ID).build();
 
     let setup = DragonDisplaySetup::new();
 

@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::glib::clone;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
@@ -106,7 +105,7 @@ glib::wrapper! {
 }
 
 impl SelectCampaignWindow {
-    pub fn new(app: &Application, campaign_list: Vec<Campaign>) -> Self {
+    pub fn new(app: &gtk::Application, campaign_list: Vec<Campaign>) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         let imp = object.imp();

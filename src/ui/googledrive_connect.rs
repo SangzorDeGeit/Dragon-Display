@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
@@ -91,7 +90,7 @@ glib::wrapper! {
 }
 
 impl GoogledriveConnectWindow {
-    pub fn new(app: &Application, reconnect: bool) -> Self {
+    pub fn new(app: &gtk::Application, reconnect: bool) -> Self {
         // set all properties
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);

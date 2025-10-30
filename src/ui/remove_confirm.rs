@@ -1,4 +1,3 @@
-use adw::Application;
 use gtk::prelude::ObjectExt;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib};
@@ -91,7 +90,7 @@ glib::wrapper! {
 }
 
 impl RemoveConfirmWindow {
-    pub fn new(app: &Application, campaign: &DdCampaign) -> Self {
+    pub fn new(app: &gtk::Application, campaign: &DdCampaign) -> Self {
         let object = glib::Object::new::<Self>();
         object.set_property("application", app);
 
