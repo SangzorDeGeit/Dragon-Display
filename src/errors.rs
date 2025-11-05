@@ -56,5 +56,10 @@ pub enum DragonDisplayError {
         msg: String,
     },
     #[snafu(display("{}", msg), visibility(pub))]
+    DecodeError {
+        source: base64::DecodeError,
+        msg: String,
+    },
+    #[snafu(display("{}", msg), visibility(pub))]
     Other { msg: String },
 }

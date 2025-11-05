@@ -1,15 +1,16 @@
+use gdk4::builders::RGBABuilder;
 use gdk4::{Monitor, Texture, RGBA};
 use gtk::gdk_pixbuf::Pixbuf;
-use gtk::glib::clone;
+use gtk::glib::{clone, Bytes};
 use gtk::graphene::{Point, Rect, Size};
 use gtk::prelude::*;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk::{gio, glib, MediaFile};
-use snafu::{OptionExt, Report};
+use snafu::{OptionExt, Report, ResultExt};
+use vtt_rust::open_vtt;
 
-use crate::errors::{DragonDisplayError, OtherSnafu};
+use crate::errors::{DragonDisplayError, GlibSnafu, OtherSnafu};
 use crate::videopipeline::VideoPipeline;
-use crate::widgets::video::DdVideoPipeline;
 use crate::{try_emit, APP_ID};
 
 use super::options::ColorPreset;
@@ -231,6 +232,17 @@ impl DdDisplayWindow {
         );
     }
 
+    /// Set the vtt file and fog of war
+    pub fn set_vtt(&self, path_to_vtt: String, fog_of_war: Vec<Rect>) {
+        self.disconnect_media();
+        let mut vtt = try_emit!(self, open_vtt(&path_to_vtt).ok().context(OtherSnafu {msg: "Failed to open vtt".to_string()}), false);
+        let image = try_emit!(self, vtt.take_image().ok().context(OtherSnafu {msg: "Failed to get image from vtt file".to_string()}), false);
+        let bytes = Bytes::from(&image);
+        let texture = try_emit!(self, Texture::from_bytes(&bytes).context(GlibSnafu {msg: "Failed to create texture from image in vtt".to_string()}), false);
+        self.imp().texture.replace(Some(texture));
+        self.redraw_vtt(fog_of_war);
+    }
+
     /// Toggle the content fit of the image, if there is no picture it will update the value but
     /// silently fail to update the picture
     pub fn toggle_fit(&self) {
@@ -313,11 +325,9 @@ impl DdDisplayWindow {
             90 | 270 => (height, width),
             _ => (width, height),
         };
-        snapshot.save();
         snapshot.translate(&Point::new(new_width / 2.0, new_height / 2.0));
         snapshot.rotate(angle_degree as f32);
         snapshot.translate(&Point::new(-width / 2.0, -height / 2.0));
-        snapshot.restore();
     }
 
     /// Draws the given texture to the snapshot
@@ -326,6 +336,20 @@ impl DdDisplayWindow {
         let height = texture.height() as f32;
         snapshot.save();
         snapshot.append_texture(texture, &Rect::new(0.0, 0.0, width, height));
+        snapshot.restore();
+    }
+
+    fn draw_fogofwar(snapshot: &gtk::Snapshot, fog_of_war: Vec<Rect>) {
+        snapshot.save();
+        let black = RGBABuilder::new()
+            .red(0.)
+            .blue(0.)
+            .green(0.)
+            .alpha(1.)
+            .build();
+        for rect in fog_of_war {
+            snapshot.append_color(&black, &rect);
+        }
         snapshot.restore();
     }
 
@@ -349,7 +373,7 @@ impl DdDisplayWindow {
         };
 
         let snapshot = gtk::Snapshot::new();
-
+    
         Self::draw_rotation(&snapshot, width, height, rotation);
 
         Self::draw_texture(&snapshot, texture);
@@ -366,6 +390,30 @@ impl DdDisplayWindow {
         }
 
         let paintable = match snapshot.to_paintable(Some(&Size::new(new_width, new_height))) {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+        self.imp().content.set_paintable(Some(&paintable));
+    }
+
+    fn redraw_vtt(&self, fog_of_war: Vec<Rect>) {
+        let binding = &*self.imp().texture.borrow();
+        let texture = match binding {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+        let snapshot = gtk::Snapshot::new();
+
+        Self::draw_texture(&snapshot, texture); 
+
+        Self::draw_fogofwar(&snapshot, fog_of_war);
+        let width = texture.width() as f32;
+        let height = texture.height() as f32;
+        let paintable = match snapshot.to_paintable(Some(&Size::new(width, height))) {
             Some(t) => t,
             None => {
                 return;

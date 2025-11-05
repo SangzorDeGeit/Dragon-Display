@@ -94,7 +94,6 @@ impl DdCampaign {
         None
     }
 
-    /// Get the synchronization folder id of the google drive campaign, if the campaign is
     pub fn sync_folder(&self) -> Option<String> {
         let binding = self.imp().sync_option.borrow();
         if let SynchronizationOption::GoogleDrive {
