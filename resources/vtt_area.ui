@@ -2,17 +2,49 @@
 <!DOCTYPE xml>
 <interface>
     <template class="DdVttArea" parent="GtkWidget">
-        <property name="halign">fill</property>
-        <property name="valign">fill</property>
-        <property name="hexpand">true</property>
-        <property name="vexpand">true</property>
         <child>
-            <object class="GtkPicture" id="image">
+            <object class="GtkBox">
+                <property name="orientation">horizontal</property>
                 <property name="halign">fill</property>
                 <property name="valign">fill</property>
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
-                <property name="content-fit">fill</property>
+                <property name="spacing">3</property>
+                <child>
+                    <object class="GtkBox">
+                        <property name="orientation">vertical</property>
+                        <property name="halign">fill</property>
+                        <property name="valign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="spacing">3</property>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_show_all" swapped="true" />
+                                <property name="label">Show all</property>
+                                <property name="halign">fill</property>
+                                <property name="hexpand">true</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton">
+                                <signal name="clicked" handler="handle_hide_all" swapped="true" />
+                                <property name="label">Hide all</property>
+                                <property name="halign">fill</property>
+                                <property name="hexpand">true</property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkPicture" id="image">
+                        <property name="halign">fill</property>
+                        <property name="valign">fill</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="content-fit">fill</property>
+                    </object>
+                </child>
             </object>
         </child>
     </template>

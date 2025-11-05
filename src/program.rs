@@ -96,6 +96,10 @@ impl DragonDisplayProgram {
             display_window.rotate_270();
         }));
 
+        control_window.connect_update(clone!(@weak display_window => move |_, path, fow| {
+            display_window.set_vtt(path, fow.fow());
+        }));
+
         control_window.connect_image(clone!(@weak display_window => move |_, path| {
             display_window.set_image(path);
         }));

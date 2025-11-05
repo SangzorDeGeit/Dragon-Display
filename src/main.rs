@@ -9,6 +9,7 @@ use gtk::{gio, glib};
 pub mod campaign;
 pub mod config;
 pub mod errors;
+pub mod fogofwar;
 pub mod gd_client;
 pub mod program;
 pub mod setup;

@@ -26,6 +26,7 @@ async-channel = "2.3.1"
 async-recursion = "1.1.1"
 reqwest = {version="0.10.10", features=["json", "blocking"]}
 snafu = "0.8"
+vtt_rust = { git = "https://github.com/SangzorDeGeit/vtt_rust.git"}
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

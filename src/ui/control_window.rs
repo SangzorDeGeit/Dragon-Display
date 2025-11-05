@@ -1,31 +1,36 @@
-use std::cell::Cell;
 use std::fs::read_dir;
 use std::path::PathBuf;
-use std::rc::Rc;
 
+use gtk::gio::ListStore;
 use gtk::glib::clone;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
-use gtk::{gio, glib};
+use gtk::{gio, glib, StringObject};
 use gtk::{prelude::*, Label};
-use snafu::Report;
 use snafu::ResultExt;
+use snafu::{OptionExt, Report};
 
 use crate::config::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, VTT_EXTENSIONS};
-use crate::errors::*;
+use crate::fogofwar::DdFogOfWar;
 use crate::widgets::thumbnail::MediaType;
 use crate::widgets::thumbnail_grid::DdThumbnailGrid;
 use crate::widgets::vtt_area::DdVttArea;
+use crate::{errors::*, try_emit};
 
 mod imp {
 
-    use std::cell::{Cell, OnceCell};
+    use std::cell::{Cell, OnceCell, RefCell};
     use std::sync::OnceLock;
 
     use glib::subclass::InitializingObject;
     use gtk::glib::subclass::Signal;
-    use gtk::prelude::*;
     use gtk::subclass::prelude::*;
-    use gtk::{glib, template_callbacks, Box, Button, CompositeTemplate, Stack, StackSwitcher};
+    use gtk::{
+        glib, template_callbacks, Box, Button, CompositeTemplate, Stack, StackSwitcher,
+        StringObject,
+    };
+    use gtk::{prelude::*, DropDown};
+
+    use crate::fogofwar::DdFogOfWar;
 
     // Object holding the state
     #[derive(CompositeTemplate, Default)]
@@ -43,6 +48,11 @@ mod imp {
         pub vtts: TemplateChild<Box>,
         #[template_child]
         pub options_button: TemplateChild<Button>,
+        #[template_child]
+        pub vtt_dropdown: TemplateChild<DropDown>,
+        #[template_child]
+        pub update_button: TemplateChild<Button>,
+        pub fow: RefCell<Option<DdFogOfWar>>,
         pub campaign_path: OnceCell<String>,
         pub has_images: Cell<bool>,
     }
@@ -108,6 +118,27 @@ mod imp {
         fn handle_grid(&self, _: Button) {
             self.obj().emit_by_name::<()>("grid", &[]);
         }
+
+        #[template_callback]
+        fn handle_update(&self, button: Button) {
+            button.set_sensitive(false);
+            if self.vtt_dropdown.selected() == 0 {
+                return;
+            }
+            let path = match self.vtt_dropdown.selected_item() {
+                Some(p) => p,
+                None => return,
+            };
+            let path = path
+                .downcast_ref::<StringObject>()
+                .expect("Should be a stringobject");
+            let fow = match &*self.fow.borrow() {
+                Some(fow) => fow.clone(),
+                None => return,
+            };
+            self.obj()
+                .emit_by_name::<()>("update", &[&path.string().to_string(), &fow]);
+        }
     }
 
     // Trait shared by all GObjects
@@ -130,6 +161,9 @@ mod imp {
                         .build(),
                     Signal::builder("fit").build(),
                     Signal::builder("grid").build(),
+                    Signal::builder("update")
+                        .param_types([String::static_type(), DdFogOfWar::static_type()])
+                        .build(),
                     Signal::builder("error")
                         .param_types([String::static_type(), bool::static_type()])
                         .build(),
@@ -180,7 +214,8 @@ impl DdControlWindow {
             .imp()
             .stackswitcher
             .set_stack(Some(&object.imp().stack));
-        let (images, _vtts, videos) = object.seperate_media(campaign_path)?;
+        let (images, vtts, videos) = object.seperate_media(campaign_path)?;
+        // ---- Image page setup ------
         if images.len() == 0 {
             let label = Label::builder()
                 .label("You have no images")
@@ -197,42 +232,43 @@ impl DdControlWindow {
                 object.emit_by_name::<()>("image", &[&path]);
             }));
         }
-        // get all vtts from the folder
-        // setup the vtt grid
-        let vtt_area = DdVttArea::new();
-        object.imp().vtts.append(&vtt_area);
-        let pressed = Rc::new(Cell::new(0));
-        let xcoord = Rc::new(Cell::new(0.));
-        let ycoord = Rc::new(Cell::new(0.));
+        // ---- Vtt page setup ------
+        // create the list model
+        let vtts = vtts
+            .iter()
+            .flat_map(|f| f.to_str())
+            .map(|s| StringObject::new(s))
+            .collect::<Vec<_>>();
+        let vtt_model = ListStore::new::<StringObject>();
+        let no_selection = StringObject::new("<No selection>");
+        vtt_model.append(&no_selection);
+        vtt_model.extend_from_slice(vtts.as_slice());
 
-        vtt_area.connect_pressed(
-            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_, n, x, y| {
-                pressed.set(n);
-                xcoord.set(x);
-                ycoord.set(y);
-            }),
-        );
-
-        vtt_area.connect_stopped(
-            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_| {
-                if pressed.get() > 0 {
-                    println!("long press");
-                    println!("{},{}",xcoord.get(), ycoord.get());
-                    pressed.set(pressed.get()+1);
+        object.imp().vtt_dropdown.set_model(Some(&vtt_model));
+        object.imp().vtts.allocation();
+        object
+            .imp()
+            .vtt_dropdown
+            .connect_selected_notify(clone!(@weak object => move |dropdown| {
+                if let Some(child) = object.imp().vtts.first_child() {
+                    object.imp().vtts.remove(&child);
                 }
-            }),
-        );
-        vtt_area.connect_released(
-            clone!(@strong pressed, @strong xcoord, @strong ycoord => move |_, n| {
-                let old_n = pressed.get();
-                if n == old_n {
-                    println!("short press");
-                    println!("{},{}",xcoord.get(), ycoord.get());
+                if dropdown.selected() == 0 {
+                    return;
                 }
-                pressed.set(0);
-            }),
-        );
+                let vtt = try_emit!(object, dropdown.selected_item().context(OtherSnafu {msg: "VTT not found"}), false);
+                let vtt = vtt.downcast::<StringObject>().expect("Item should be a stringobject");
+                let vtt_area = try_emit!(object, DdVttArea::new(vtt.string().as_str()), false);
 
+                vtt_area.connect_update(clone!(@weak object => move |_, fow| {
+                    object.imp().fow.replace(Some(fow));
+                    object.imp().update_button.set_sensitive(true);
+                }));
+
+                object.imp().vtts.append(&vtt_area);
+            }));
+
+        // ---- video page setup ------
         if videos.len() == 0 {
             let label = Label::builder()
                 .label("You have no videos")
@@ -429,6 +465,20 @@ impl DdControlWindow {
             true,
             glib::closure_local!(|window| {
                 f(window);
+            }),
+        )
+    }
+
+    /// Signal emitted when the update button is pressed
+    pub fn connect_update<F: Fn(&Self, String, DdFogOfWar) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "update",
+            true,
+            glib::closure_local!(|window, path, fow| {
+                f(window, path, fow);
             }),
         )
     }

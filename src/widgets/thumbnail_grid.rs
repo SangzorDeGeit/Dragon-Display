@@ -30,7 +30,6 @@ mod imp {
         pub next: TemplateChild<Button>,
         #[template_child]
         pub previous: TemplateChild<Button>,
-
         pub togglebuttons: RefCell<Vec<ToggleButton>>,
         pub current_grid_nr: Cell<usize>,
         pub page_vec: RefCell<Vec<Grid>>,
